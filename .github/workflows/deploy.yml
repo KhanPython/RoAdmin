@@ -18,9 +18,11 @@ jobs:
           debug: true
           envs: DISCORD_TOKEN
           script: |
+            if [ ! -d ~/RoAdmin ]; then
+              git clone https://github.com/KhanPython/RoAdmin.git ~/RoAdmin
+            fi
             cd ~/RoAdmin
-            echo "DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\"" > .env
-
             git pull origin master
+            echo "DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\"" > .env
             npm install --production
             pm2 restart RoAdmin --update-env || pm2 start src/index.js --name "RoAdmin"
