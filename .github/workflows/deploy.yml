@@ -15,6 +15,7 @@ jobs:
           host: ${{ secrets.REMOTE_HOST }}
           username: ${{ secrets.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           envs: DISCORD_TOKEN
           script: |
             cd ~/RoAdmin
