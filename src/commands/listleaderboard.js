@@ -50,11 +50,12 @@ module.exports = {
     }
 
     try {
+      // Defer the reply to prevent timeout and double-acknowledgment issues
+      await interaction.deferReply({ ephemeral: true });
       // Check if API key is cached, if not prompt user
       if (!openCloud.hasApiKey(universeId)) {
-        await interaction.reply({
+        await interaction.editReply({
           embeds: [apiCache.createMissingApiKeyEmbed(universeId)],
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -62,9 +63,8 @@ module.exports = {
       // Verify universe exists
       const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
       if (!universeCheck.success) {
-        await interaction.reply({
+        await interaction.editReply({
           content: universeCheck.errorMessage,
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -161,10 +161,9 @@ module.exports = {
       const initialEmbed = generatePageEmbed(currentPage, !!currentPageToken);
       const initialButtons = createButtons(currentPage, !!currentPageToken);
       
-      const message = await interaction.reply({
+      const message = await interaction.editReply({
         embeds: [initialEmbed],
         components: currentPageToken ? [initialButtons] : [],
-        flags: MessageFlags.Ephemeral,
       });
 
       if (!currentPageToken) return; // No next page available
@@ -262,16 +261,19 @@ module.exports = {
       });
 
     } catch (error) {
-      await interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setTitle("Error")
-          .setColor(0xFF0000)
-          .setDescription("An unexpected error occurred")
-          .addFields({ name: "Error:", value: error.message })
-          .setTimestamp()
-        ],
-        flags: MessageFlags.Ephemeral,
-      });
+      try {
+        await interaction.editReply({
+          embeds: [new EmbedBuilder()
+            .setTitle("Error")
+            .setColor(0xFF0000)
+            .setDescription("An unexpected error occurred")
+            .addFields({ name: "Error:", value: error.message })
+            .setTimestamp()
+          ],
+        });
+      } catch (replyError) {
+        console.error("Failed to send error reply:", replyError);
+      }
     }
   },
 };
