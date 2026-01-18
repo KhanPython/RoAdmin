@@ -13,7 +13,7 @@ module.exports = {
   permissions: ["ADMINISTRATOR"],
   ephemeral: false,
   minArgs: 2,
-  expectedArgs: "<userId> <universeId>",
+  expectedArgs: "<userId> <universeId> [datastore]",
   guildOnly: true,
 
   options: [
@@ -29,11 +29,18 @@ module.exports = {
       required: true,
       type: ApplicationCommandOptionType.Number,
     },
+    {
+      name: "datastore",
+      description: "The datastore name (default: player_currency)",
+      required: true,
+      type: ApplicationCommandOptionType.String,
+    },
   ],
 
   callback: async ({ user, args, interaction }) => {
     const userId = interaction?.options?.getNumber("userid") || parseInt(args[0]);
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
+    const datastoreName = interaction?.options?.getString("datastore") || args[2] || "player_currency";
 
     // Validate userId
     if (!userId || isNaN(userId)) {
@@ -66,10 +73,10 @@ module.exports = {
       }
 
       // Get player data
-      const playerDataResult = await openCloud.GetPlayerData(userId, universeId);
+      const playerDataResult = await openCloud.GetPlayerData(userId, universeId, datastoreName);
       
       if (!playerDataResult.success || !playerDataResult.data) {
-        return `No player data found for user ${userId}.`;
+        return `No player data found for user ${userId} in datastore "${datastoreName}".`;
       }
 
       // Get universe info
@@ -115,7 +122,8 @@ module.exports = {
         .setDescription(`**Experience:** ${universeInfo.name}`)
         .addFields(
           { name: "User ID", value: userId.toString(), inline: true },
-          { name: "Universe ID", value: universeId.toString(), inline: true }
+          { name: "Universe ID", value: universeId.toString(), inline: true },
+          { name: "Datastore", value: datastoreName, inline: true }
         );
 
       if (fields.length > 0) {

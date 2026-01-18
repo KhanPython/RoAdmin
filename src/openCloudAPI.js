@@ -13,7 +13,7 @@ const apiCache = require("./utils/apiCache");
  * @param {string} datastoreName - Name of the datastore (default: "player_currency")
  * @returns {Promise<{success: boolean, data: any, status: string}>}
  */
-exports.GetPlayerData = async function (userId, universeId, datastoreName = "player_currency") {
+exports.GetPlayerData = async function (userId, universeId, datastoreName) {
   try {
     if (!universeId) {
       throw new Error("Universe ID is required");
@@ -52,10 +52,10 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName = "pla
  * @param {number} userId - The Roblox user ID
  * @param {any} value - The data to store
  * @param {number} universeId - The Roblox universe ID (required)
- * @param {string} datastoreName - Name of the datastore (default: "player_currency")
+ * @param {string} datastoreName - Name of the datastore
  * @returns {Promise<{success: boolean, status: string}>}
  */
-exports.SetPlayerData = async function (userId, value, universeId, datastoreName = "player_currency") {
+exports.SetPlayerData = async function (userId, value, universeId, datastoreName) {
   try {
     if (!universeId) {
       throw new Error("Universe ID is required");
@@ -91,10 +91,10 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
  * Increment a value in the datastore
  * @param {number} userId - The Roblox user ID
  * @param {number} amount - The amount to increment by
- * @param {string} datastoreName - Name of the datastore (default: "player_currency")
+ * @param {string} datastoreName - Name of the datastore
  * @returns {Promise<{success: boolean, newValue: number, status: string}>}
  */
-exports.IncrementPlayerData = async function (userId, amount, datastoreName = "player_currency") {
+exports.IncrementPlayerData = async function (userId, amount, datastoreName) {
   try {
     const datastore = DataStoreService.GetDataStore(datastoreName);
     const [newValue, keyInfo] = await datastore.IncrementAsync(`player_${userId}`, amount);
@@ -112,7 +112,7 @@ exports.IncrementPlayerData = async function (userId, amount, datastoreName = "p
  * @param {string} datastoreName - Name of the datastore
  * @returns {Promise<{success: boolean, newValue: any, status: string}>}
  */
-exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName = "player_currency") {
+exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName) {
   try {
     const datastore = DataStoreService.GetDataStore(datastoreName);
     const newValue = await datastore.UpdateAsync(`player_${userId}`, updateFunction);
@@ -129,7 +129,7 @@ exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName
  * @param {string} datastoreName - Name of the datastore
  * @returns {Promise<{success: boolean, oldValue: any, status: string}>}
  */
-exports.RemovePlayerData = async function (userId, datastoreName = "player_currency") {
+exports.RemovePlayerData = async function (userId, datastoreName) {
   try {
     const datastore = DataStoreService.GetDataStore(datastoreName);
     const oldValue = await datastore.RemoveAsync(`player_${userId}`);
