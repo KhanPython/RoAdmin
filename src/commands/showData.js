@@ -2,6 +2,7 @@ const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags, AttachmentBuil
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
+//
 
 module.exports = {
   category: "Player Data",
@@ -92,15 +93,17 @@ module.exports = {
       const jsonString = JSON.stringify(entryData, null, 2); // Pretty print with 2-space indent
       
       // Create main embed with metadata
+      // Using description for metadata avoids Field value limits (1024 chars)
+      // Description has a much higher limit (4096 chars)
       const embed = new EmbedBuilder()
-        .setTitle(`Datastore Entry: ${key}`)
+        .setTitle(`Datastore Entry`)
         .setColor(0x0099FF)
-        .setDescription(`**Experience:** ${universeInfo.name}`)
-        .addFields(
-          { name: "Key", value: key.length > 100 ? key.substring(0, 97) + "..." : key, inline: true },
-          { name: "Universe ID", value: universeId.toString(), inline: true },
-          { name: "Datastore", value: datastoreName, inline: true },
-          { name: "Data Size", value: `${jsonString.length} bytes`, inline: true }
+        .setDescription(
+          `**Key:** ${key}\n` +
+          `**Universe ID:** ${universeId}\n` +
+          `**Datastore:** ${datastoreName}\n` +
+          `**Experience:** ${universeInfo.name}\n` +
+          `**Size:** ${jsonString.length} bytes`
         )
         .setFooter({ text: "Datastore Entry Information" })
         .setTimestamp();
