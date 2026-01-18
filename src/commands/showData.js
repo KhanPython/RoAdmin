@@ -93,7 +93,7 @@ module.exports = {
       const jsonString = JSON.stringify(entryData, null, 2); // Pretty print with 2-space indent
       
       // Create main embed with metadata
-      const embed = new EmbedBuilder()
+      const infoEmbed = new EmbedBuilder()
         .setTitle(`Datastore Entry`)
         .setColor(0x0099FF)
         .addFields(
@@ -107,7 +107,7 @@ module.exports = {
         .setTimestamp();
       
       if (universeInfo.icon) {
-        embed.setThumbnail(universeInfo.icon);
+        infoEmbed.setThumbnail(universeInfo.icon);
       }
 
       // Format as code block
@@ -115,10 +115,13 @@ module.exports = {
 
       // Check if data fits in embed description (Discord text limit is 4096 chars)
       if (codeBlock.length <= 4096) {
-        embed.setDescription(codeBlock);
-        
+        // Use a second embed to display the data BELOW the metadata fields
+        const dataEmbed = new EmbedBuilder()
+          .setColor(0x2B2D31)
+          .setDescription(codeBlock);
+
         await interaction.reply({
-          embeds: [embed],
+          embeds: [infoEmbed, dataEmbed],
           flags: MessageFlags.Ephemeral,
         });
       } else {
@@ -126,10 +129,14 @@ module.exports = {
         const fileBuffer = Buffer.from(jsonString, 'utf-8');
         const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.json` });
         
-        embed.setDescription("Data is too large to display inline. See attached JSON file.");
+        infoEmbed.addFields({
+           name: "Data",
+           value: "Data is too large to display inline. See attached JSON file.",
+           inline: false
+        });
         
         await interaction.reply({
-          embeds: [embed],
+          embeds: [infoEmbed],
           files: [attachment],
           flags: MessageFlags.Ephemeral,
         });
