@@ -59,7 +59,7 @@ module.exports = {
     }
 
     // Defer reply to prevent "Unknown interaction" timeout for long API calls
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       // Check if API key is cached, if not prompt user

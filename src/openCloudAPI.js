@@ -103,7 +103,6 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     return createDataStoreErrorResponse("GetDataStoreEntry", `Unexpected status: ${response.status}`, { data: null });
   } catch (error) {
     console.error(`Error getting data for key ${key}:`, error.message);
-    console.error(`[DEBUG] Error response data:`, error.response?.data);
     // Return empty data rather than erroring out, in case entry doesn't exist
     if (error.response?.status === 404) {
       return createSuccessResponse({ data: null });

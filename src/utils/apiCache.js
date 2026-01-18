@@ -6,6 +6,7 @@
 
 // In-memory cache: { universeId: apiKey }
 const apiKeyCache = {};
+const { MessageFlags } = require("discord.js");
 
 /**
  * Get API key for a universe
@@ -51,7 +52,7 @@ async function getOrPromptApiKey(interaction, universeId) {
   // Prompt user with ephemeral message
   const promptMessage = await interaction.followUp({
     content: `🔑 **API Key Missing for Universe ${universeId}**\n\nPlease use the \`/setapikey\` command to store the API key for this universe.\n\`\`\`\n/setapikey <universeId> <apiKey>\n\`\`\`\n\nThe API key will be cached for this session only.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   // Return null since the user hasn't provided it yet
