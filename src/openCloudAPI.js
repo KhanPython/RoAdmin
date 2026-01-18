@@ -109,7 +109,14 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     if (error.response?.status === 404) {
       return createSuccessResponse({ data: null });
     }
-    return createDataStoreErrorResponse("GetDataStoreEntry", error.message, { data: null });
+    
+    // Create a safe error message (truncate if too long)
+    let errorMsg = error.message || "Unknown error";
+    if (errorMsg.length > 200) {
+      errorMsg = errorMsg.substring(0, 197) + "...";
+    }
+    
+    return createDataStoreErrorResponse("GetDataStoreEntry", errorMsg, { data: null });
   }
 };
 

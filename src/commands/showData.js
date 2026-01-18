@@ -140,11 +140,18 @@ module.exports = {
       return;
     } catch (error) {
       console.error("Error in showData command:", error);
+      
+      // Truncate error message if too long for embed (max 4096 chars for embed description, but we need to be safe)
+      let errorMessage = error.message || "An unknown error occurred";
+      if (errorMessage.length > 1000) {
+        errorMessage = errorMessage.substring(0, 997) + "...";
+      }
+      
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setTitle("Error")
           .setColor(0xFF0000)
-          .setDescription(`Error: ${error.message}`)
+          .setDescription(`Error: ${errorMessage}`)
           .setTimestamp()
         ],
         flags: MessageFlags.Ephemeral,
