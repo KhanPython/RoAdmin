@@ -93,17 +93,15 @@ module.exports = {
       const jsonString = JSON.stringify(entryData, null, 2); // Pretty print with 2-space indent
       
       // Create main embed with metadata
-      // Using description for metadata avoids Field value limits (1024 chars)
-      // Description has a much higher limit (4096 chars)
       const embed = new EmbedBuilder()
         .setTitle(`Datastore Entry`)
         .setColor(0x0099FF)
-        .setDescription(
-          `**Key:** ${key}\n` +
-          `**Universe ID:** ${universeId}\n` +
-          `**Datastore:** ${datastoreName}\n` +
-          `**Experience:** ${universeInfo.name}\n` +
-          `**Size:** ${jsonString.length} bytes`
+        .addFields(
+          { name: "Experience", value: `${universeInfo.name}`, inline: true },
+          { name: "Key", value: `${key}`, inline: true },
+          { name: "Universe ID", value: `${universeId}`, inline: true },
+          { name: "Datastore", value: `${datastoreName}`, inline: true },
+          { name: "Data Size", value: `${jsonString.length} bytes`, inline: true }
         )
         .setFooter({ text: "Datastore Entry Information" })
         .setTimestamp();
@@ -112,14 +110,15 @@ module.exports = {
         embed.setThumbnail(universeInfo.icon);
       }
 
-      // Check if data fits in a code block (Discord message limit is 2000 chars, code block uses ~8 chars for delimiters)
-      if (jsonString.length < 1900) {
-        // Small data: show in code block within the embed reply
-        const codeBlockMessage = `\`\`\`json\n${jsonString}\n\`\`\``;
+      // Format as code block
+      const codeBlock = `\`\`\`json\n${jsonString}\n\`\`\``;
+
+      // Check if data fits in embed description (Discord text limit is 4096 chars)
+      if (codeBlock.length <= 4096) {
+        embed.setDescription(codeBlock);
         
         await interaction.reply({
           embeds: [embed],
-          content: codeBlockMessage,
           flags: MessageFlags.Ephemeral,
         });
       } else {
@@ -127,11 +126,7 @@ module.exports = {
         const fileBuffer = Buffer.from(jsonString, 'utf-8');
         const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.json` });
         
-        embed.addFields({
-          name: "⚠️ Data Size",
-          value: "Data is too large to display inline. See attached JSON file.",
-          inline: false
-        });
+        embed.setDescription("Data is too large to display inline. See attached JSON file.");
         
         await interaction.reply({
           embeds: [embed],
