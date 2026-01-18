@@ -16,7 +16,6 @@ jobs:
           username: ${{ secrets.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
-          envs: DISCORD_TOKEN
           script: |
             if [ ! -d ~/RoAdmin ]; then
               git clone https://github.com/KhanPython/RoAdmin.git ~/RoAdmin
