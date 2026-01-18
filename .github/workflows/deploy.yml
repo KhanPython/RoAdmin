@@ -16,23 +16,27 @@ jobs:
           username: ${{ secrets.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # === CONFIGURATION: PASTE YOUR PATHS HERE ===
+            GIT_PATH="/usr/bin/git"  # Replace with output of 'which git'
+            NPM_PATH="/usr/bin/npm" # Replace with output of 'which npm'
+            PM2_PATH="/usr/local/bin/pm2" # Replace with output of 'which pm2'
+            # ============================================
+
             # 1. Go to folder
             cd ~/RoAdmin
 
-            # 2. Safety: Stash any local changes so 'git pull' doesn't get blocked
-            git stash
+            # 2. Pull changes (using absolute git path)
+            $GIT_PATH stash
+            $GIT_PATH pull origin master
 
-            # 3. Pull the latest code
-            git pull origin master
-
-            # 4. Update .env
+            # 3. Update .env
             echo 'DISCORD_TOKEN="${{ secrets.DISCORD_TOKEN }}"' > .env
 
-            # 5. Install new libraries
-            npm install --production
+            # 4. Install dependencies (using absolute npm path)
+            $NPM_PATH install --production
 
-            # 6. Restart the bot
-            pm2 restart RoAdmin
+            # 5. Restart the bot (using absolute pm2 path)
+            $PM2_PATH restart RoAdmin || $PM2_PATH start src/index.js --name "RoAdmin"
+            $PM2_PATH save
 
-            # 7. Save the process list (Critical for auto-start on reboot)
-            pm2 save
+            echo "Deployed successfully using absolute paths."
