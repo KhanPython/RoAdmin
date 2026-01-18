@@ -39,7 +39,21 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     });
 
     if (response.status === 200) {
-      const data = response.data;
+      // The API response contains the entry value
+      // It may be nested in response.data.value or be the direct data
+      const entryValue = response.data.value || response.data;
+      
+      // Try to parse JSON if it's a string
+      let data = entryValue;
+      if (typeof entryValue === 'string') {
+        try {
+          data = JSON.parse(entryValue);
+        } catch (e) {
+          // If it's not valid JSON, keep it as a string
+          data = entryValue;
+        }
+      }
+      
       return createSuccessResponse({ data });
     }
     return createDataStoreErrorResponse("GetDataStoreEntry", `Unexpected status: ${response.status}`, { data: null });

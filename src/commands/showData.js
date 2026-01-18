@@ -91,12 +91,33 @@ module.exports = {
       const entryData = playerDataResult.data;
       const fields = [];
 
-      // Add any fields from the data object
-      for (const [dataKey, value] of Object.entries(entryData)) {
+      // Handle different data structures
+      if (typeof entryData === "object" && entryData !== null) {
+        // Add any fields from the data object
+        for (const [dataKey, value] of Object.entries(entryData)) {
+          let fieldValue = typeof value === "object" ? JSON.stringify(value) : String(value);
+          
+          // Truncate if too long for Discord embed (1024 char limit)
+          if (fieldValue.length > 1020) {
+            fieldValue = fieldValue.substring(0, 1017) + "...";
+          }
+          
+          fields.push({
+            name: dataKey.charAt(0).toUpperCase() + dataKey.slice(1),
+            value: fieldValue,
+            inline: true
+          });
+        }
+      } else {
+        // If data is a simple value, display it directly
+        let dataValue = String(entryData);
+        if (dataValue.length > 1020) {
+          dataValue = dataValue.substring(0, 1017) + "...";
+        }
         fields.push({
-          name: dataKey.charAt(0).toUpperCase() + dataKey.slice(1),
-          value: typeof value === "object" ? JSON.stringify(value) : String(value),
-          inline: true
+          name: "Value",
+          value: dataValue,
+          inline: false
         });
       }
 
@@ -106,13 +127,37 @@ module.exports = {
         .setColor(0x0099FF)
         .setDescription(`**Experience:** ${universeInfo.name}`)
         .addFields(
-          { name: "Key", value: key, inline: true },
+          { name: "Key", value: key.length > 100 ? key.substring(0, 97) + "..." : key, inline: true },
           { name: "Universe ID", value: universeId.toString(), inline: true },
           { name: "Datastore", value: datastoreName, inline: true }
         );
 
       if (fields.length > 0) {
-        embed.addFields(fields);
+        // Add fields in batches to avoid exceeding limits
+        const fieldBatches = [];
+        let currentBatch = [];
+        
+        for (const field of fields) {
+          currentBatch.push(field);
+          // Discord embeds can have max 25 fields
+          if (currentBatch.length === 25) {
+            fieldBatches.push(currentBatch);
+            currentBatch = [];
+          }
+        }
+        if (currentBatch.length > 0) {
+          fieldBatches.push(currentBatch);
+        }
+        
+        // Add first batch to this embed
+        if (fieldBatches.length > 0) {
+          embed.addFields(fieldBatches[0]);
+          
+          // If there are more batches, note it
+          if (fieldBatches.length > 1) {
+            embed.addFields({ name: "⚠️ Data Truncated", value: `Only showing first ${fieldBatches[0].length} fields`, inline: false });
+          }
+        }
       } else {
         embed.addFields({ name: "Data", value: "No data stored", inline: false });
       }
