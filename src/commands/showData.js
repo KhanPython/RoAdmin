@@ -97,10 +97,10 @@ module.exports = {
         .setTitle(`Datastore Entry`)
         .setColor(0x0099FF)
         .addFields(
-          { name: "Experience", value: `${universeInfo.name}`, inline: true },
-          { name: "Key", value: `${key}`, inline: true },
+          { name: "Experience", value: (`${universeInfo.name}` || "Unknown").substring(0, 1000), inline: true },
+          { name: "Key", value: (`${key}`).substring(0, 1000), inline: true },
           { name: "Universe ID", value: `${universeId}`, inline: true },
-          { name: "Datastore", value: `${datastoreName}`, inline: true },
+          { name: "Datastore", value: (`${datastoreName}`).substring(0, 1000), inline: true },
           { name: "Data Size", value: `${jsonString.length} bytes`, inline: true }
         )
         .setFooter({ text: "Datastore Entry Information" })
