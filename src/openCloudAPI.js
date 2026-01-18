@@ -29,28 +29,32 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
       throw new Error(`API key not found in cache for universe ${universeId}`);
     }
 
-    // Use REST API directly
-    const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries`;
-    const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
-    url.searchParams.append('entryKey', key);
+    // Use REST API directly with the correct endpoint format
+    // The endpoint should be: /universes/{id}/data-stores/{name}/scopes/{scope}/entries/{entryKey}
+    const encodedKey = encodeURIComponent(key);
+    const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries/${encodedKey}`;
+    const url = `https://apis.roblox.com/cloud/v2/${path}`;
 
-    const response = await axios.get(url.toString(), {
+    const response = await axios.get(url, {
       headers: getApiHeaders(universeId),
     });
 
     if (response.status === 200) {
-      // The API response contains the entry value
-      // It may be nested in response.data.value or be the direct data
-      const entryValue = response.data.value || response.data;
+      // The API response should contain the value directly
+      // Roblox stores the entry value in response.data
+      let data = response.data;
+      
+      // If the response has a 'value' property, use that
+      if (response.data && response.data.value !== undefined) {
+        data = response.data.value;
+      }
       
       // Try to parse JSON if it's a string
-      let data = entryValue;
-      if (typeof entryValue === 'string') {
+      if (typeof data === 'string') {
         try {
-          data = JSON.parse(entryValue);
+          data = JSON.parse(data);
         } catch (e) {
           // If it's not valid JSON, keep it as a string
-          data = entryValue;
         }
       }
       
