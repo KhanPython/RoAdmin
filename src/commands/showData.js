@@ -58,12 +58,14 @@ module.exports = {
       return "Please provide a datastore name.";
     }
 
+    // Defer reply to prevent "Unknown interaction" timeout for long API calls
+    await interaction.deferReply({ ephemeral: true });
+
     try {
       // Check if API key is cached, if not prompt user
       if (!openCloud.hasApiKey(universeId)) {
-        await interaction.reply({
+        await interaction.editReply({
           embeds: [apiCache.createMissingApiKeyEmbed(universeId)],
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -71,9 +73,8 @@ module.exports = {
       // Verify universe exists
       const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
       if (!universeCheck.success) {
-        await interaction.reply({
+        await interaction.editReply({
           content: universeCheck.errorMessage,
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -82,7 +83,10 @@ module.exports = {
       const playerDataResult = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
       
       if (!playerDataResult.success || !playerDataResult.data) {
-        return `No data found for key "${key}" in datastore "${datastoreName}".`;
+        await interaction.editReply({
+           content: `No data found for key "${key}" in datastore "${datastoreName}".`
+        });
+        return;
       }
 
       // Get universe info
@@ -120,9 +124,8 @@ module.exports = {
           .setColor(0x2B2D31)
           .setDescription(codeBlock);
 
-        await interaction.reply({
+        await interaction.editReply({
           embeds: [infoEmbed, dataEmbed],
-          flags: MessageFlags.Ephemeral,
         });
       } else {
         // Large data: send as file attachment
@@ -135,10 +138,9 @@ module.exports = {
            inline: false
         });
         
-        await interaction.reply({
+        await interaction.editReply({
           embeds: [infoEmbed],
           files: [attachment],
-          flags: MessageFlags.Ephemeral,
         });
       }
       
@@ -152,14 +154,13 @@ module.exports = {
         errorMessage = errorMessage.substring(0, 997) + "...";
       }
       
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [new EmbedBuilder()
           .setTitle("Error")
           .setColor(0xFF0000)
           .setDescription(`Error: ${errorMessage}`)
           .setTimestamp()
         ],
-        flags: MessageFlags.Ephemeral,
       });
     }
   },

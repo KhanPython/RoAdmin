@@ -49,9 +49,8 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     if (response.status === 200) {
       // Check if response is an array (this means we got a list, not a single entry)
       if (Array.isArray(response.data)) {
-        console.error(`[ERROR] GetDataStoreEntry - Received an array instead of entry. API returned list endpoint.`);
-        // The API returned a list of entries with metadata. We need to fetch the actual value.
-        // Try to find the matching entry in the array
+        console.log(`[DEBUG] GetDataStoreEntry - Received List/Array. Searching specifically for key "${key}"...`);
+        // The API returned a list of entries (likely prefix match). We need to find the EXACT entry with ID matching our key.
         const entry = response.data.find(e => e.id === key);
         if (entry) {
           // Now fetch the actual value from the entry path
