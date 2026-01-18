@@ -17,13 +17,27 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
           script: |
+            # 1. Ensure directory exists
             if [ ! -d ~/RoAdmin ]; then
               git clone https://github.com/KhanPython/RoAdmin.git ~/RoAdmin
             fi
+
+            # 2. Go to folder
             cd ~/RoAdmin
+
+            # 3. Pull changes (Handle stash if local changes exist)
+            git reset --hard origin/master # Force match remote to avoid conflicts
             git pull origin master
-            echo "DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\"" > .env
+
+            # 4. Update .env (Using single quotes for outer wrapper is safer)
+            echo 'DISCORD_TOKEN="${{ secrets.DISCORD_TOKEN }}"' > .env
+
+            # 5. Install dependencies
             npm install --production
-            pm2 delete RoAdmin 2>/dev/null || true
-            sleep 2
-            pm2 start src/index.js --name "RoAdmin" --update-env
+
+            # 6. Restart or Start (if not running)
+            # This tries to restart "RoAdmin". If it doesn't exist, it starts it.
+            pm2 restart RoAdmin || pm2 start src/index.js --name "RoAdmin" --update-env
+
+            # 7. Save PM2 list so it survives server reboots
+            pm2 save
