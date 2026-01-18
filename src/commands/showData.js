@@ -5,23 +5,23 @@ const universeUtils = require("../utils/universeUtils");
 
 module.exports = {
   category: "Player Data",
-  description: "View player data including currency and other stored information using their UserId",
+  description: "View data from a datastore using a specific entry key",
 
   slash: "both",
   testOnly: false,
 
   permissions: ["ADMINISTRATOR"],
   ephemeral: false,
-  minArgs: 2,
-  expectedArgs: "<userId> <universeId> [datastore]",
+  minArgs: 3,
+  expectedArgs: "<key> <universeId> <datastore>",
   guildOnly: true,
 
   options: [
     {
-      name: "userid",
-      description: "The Roblox user identification",
+      name: "key",
+      description: "The datastore entry key",
       required: true,
-      type: ApplicationCommandOptionType.Number,
+      type: ApplicationCommandOptionType.String,
     },
     {
       name: "universeid",
@@ -31,25 +31,30 @@ module.exports = {
     },
     {
       name: "datastore",
-      description: "The datastore name (default: player_currency)",
+      description: "The datastore name (required)",
       required: true,
       type: ApplicationCommandOptionType.String,
     },
   ],
 
   callback: async ({ user, args, interaction }) => {
-    const userId = interaction?.options?.getNumber("userid") || parseInt(args[0]);
+    const key = interaction?.options?.getString("key") || args[0];
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
-    const datastoreName = interaction?.options?.getString("datastore") || args[2] || "player_currency";
+    const datastoreName = interaction?.options?.getString("datastore") || args[2];
 
-    // Validate userId
-    if (!userId || isNaN(userId)) {
-      return "Please provide a valid User ID.";
+    // Validate key
+    if (!key || key.trim().length === 0) {
+      return "Please provide a valid entry key.";
     }
 
     // Validate universeId
     if (!universeId || isNaN(universeId)) {
       return "Please provide a valid Universe ID.";
+    }
+
+    // Validate datastoreName
+    if (!datastoreName || datastoreName.trim().length === 0) {
+      return "Please provide a datastore name.";
     }
 
     try {
@@ -72,56 +77,36 @@ module.exports = {
         return;
       }
 
-      // Get player data
-      const playerDataResult = await openCloud.GetPlayerData(userId, universeId, datastoreName);
+      // Get datastore entry
+      const playerDataResult = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
       
       if (!playerDataResult.success || !playerDataResult.data) {
-        return `No player data found for user ${userId} in datastore "${datastoreName}".`;
+        return `No data found for key "${key}" in datastore "${datastoreName}".`;
       }
 
       // Get universe info
       const universeInfo = await openCloud.GetUniverseName(universeId);
 
-      // Build player data fields
-      const playerData = playerDataResult.data;
+      // Build data fields
+      const entryData = playerDataResult.data;
       const fields = [];
 
-      // Add currency field if it exists
-      if (playerData.currency !== undefined) {
+      // Add any fields from the data object
+      for (const [dataKey, value] of Object.entries(entryData)) {
         fields.push({
-          name: "Currency",
-          value: playerData.currency.toString(),
+          name: dataKey.charAt(0).toUpperCase() + dataKey.slice(1),
+          value: typeof value === "object" ? JSON.stringify(value) : String(value),
           inline: true
         });
-      }
-
-      // Add last updated field if it exists
-      if (playerData.lastUpdated) {
-        fields.push({
-          name: "Last Updated",
-          value: new Date(playerData.lastUpdated).toLocaleString(),
-          inline: true
-        });
-      }
-
-      // Add any other fields from the data object
-      for (const [key, value] of Object.entries(playerData)) {
-        if (key !== "currency" && key !== "lastUpdated") {
-          fields.push({
-            name: key.charAt(0).toUpperCase() + key.slice(1),
-            value: typeof value === "object" ? JSON.stringify(value) : value.toString(),
-            inline: true
-          });
-        }
       }
 
       // Create embed response
       const embed = new EmbedBuilder()
-        .setTitle(`Player Data for ${userId}`)
+        .setTitle(`Datastore Entry: ${key}`)
         .setColor(0x0099FF)
         .setDescription(`**Experience:** ${universeInfo.name}`)
         .addFields(
-          { name: "User ID", value: userId.toString(), inline: true },
+          { name: "Key", value: key, inline: true },
           { name: "Universe ID", value: universeId.toString(), inline: true },
           { name: "Datastore", value: datastoreName, inline: true }
         );
@@ -129,11 +114,11 @@ module.exports = {
       if (fields.length > 0) {
         embed.addFields(fields);
       } else {
-        embed.addFields({ name: "Data", value: "No additional data stored", inline: false });
+        embed.addFields({ name: "Data", value: "No data stored", inline: false });
       }
 
       embed
-        .setFooter({ text: "Player Data Information" })
+        .setFooter({ text: "Datastore Entry Information" })
         .setTimestamp();
       
       if (universeInfo.icon) {
@@ -142,7 +127,7 @@ module.exports = {
       
       return embed;
     } catch (error) {
-      console.error("Error in getdata command:", error);
+      console.error("Error in showData command:", error);
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setTitle("Error")

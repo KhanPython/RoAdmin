@@ -7,6 +7,53 @@ const apiCache = require("./utils/apiCache");
 // ============================================
 
 /**
+ * Get a value from a datastore using a specific key
+ * @param {string} key - The datastore entry key
+ * @param {number} universeId - The Roblox universe ID (required)
+ * @param {string} datastoreName - Name of the datastore
+ * @returns {Promise<{success: boolean, data: any, status: string}>}
+ */
+exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
+  try {
+    if (!universeId) {
+      throw new Error("Universe ID is required");
+    }
+    if (!datastoreName) {
+      throw new Error("Datastore name is required");
+    }
+    if (!key) {
+      throw new Error("Entry key is required");
+    }
+    const apiKey = apiCache.getApiKey(universeId);
+    if (!apiKey) {
+      throw new Error(`API key not found in cache for universe ${universeId}`);
+    }
+
+    // Use REST API directly
+    const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries`;
+    const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
+    url.searchParams.append('entryKey', key);
+
+    const response = await axios.get(url.toString(), {
+      headers: getApiHeaders(universeId),
+    });
+
+    if (response.status === 200) {
+      const data = response.data;
+      return createSuccessResponse({ data });
+    }
+    return createDataStoreErrorResponse("GetDataStoreEntry", `Unexpected status: ${response.status}`, { data: null });
+  } catch (error) {
+    console.error(`Error getting data for key ${key}:`, error.message);
+    // Return empty data rather than erroring out, in case entry doesn't exist
+    if (error.response?.status === 404) {
+      return createSuccessResponse({ data: null });
+    }
+    return createDataStoreErrorResponse("GetDataStoreEntry", error.message, { data: null });
+  }
+};
+
+/**
  * Get a value from the player currency datastore
  * @param {number} userId - The Roblox user ID
  * @param {number} universeId - The Roblox universe ID (required)
