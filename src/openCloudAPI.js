@@ -50,12 +50,36 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
       // Check if response is an array (this means we got a list, not a single entry)
       if (Array.isArray(response.data)) {
         console.error(`[ERROR] GetDataStoreEntry - Received an array instead of entry. API returned list endpoint.`);
+        // The API returned a list of entries with metadata. We need to fetch the actual value.
         // Try to find the matching entry in the array
         const entry = response.data.find(e => e.id === key);
         if (entry) {
-          return createSuccessResponse({ data: entry });
+          // Now fetch the actual value from the entry path
+          try {
+            const valueUrl = `https://apis.roblox.com/cloud/v2/${entry.path}`;
+            console.log(`[DEBUG] Fetching actual value from: ${valueUrl}`);
+            const valueResponse = await axios.get(valueUrl, {
+              headers: getApiHeaders(universeId),
+            });
+            
+            let data = valueResponse.data;
+            
+            // Try to parse JSON if it's a string
+            if (typeof data === 'string') {
+              try {
+                data = JSON.parse(data);
+              } catch (e) {
+                // Keep as string if not valid JSON
+              }
+            }
+            
+            return createSuccessResponse({ data });
+          } catch (valueError) {
+            console.error(`[ERROR] Failed to fetch value:`, valueError.message);
+            return createDataStoreErrorResponse("GetDataStoreEntry", `Found key but failed to fetch value: ${valueError.message}`, { data: null });
+          }
         }
-        return createDataStoreErrorResponse("GetDataStoreEntry", `Key "${key}" not found in datastore. Received list of entries instead.`, { data: null });
+        return createDataStoreErrorResponse("GetDataStoreEntry", `Key "${key}" not found in datastore.`, { data: null });
       }
 
       // The API response should contain the value directly
@@ -65,7 +89,7 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
       if (response.data && response.data.value !== undefined) {
         data = response.data.value;
       }
-      
+
       // Try to parse JSON if it's a string
       if (typeof data === 'string') {
         try {
