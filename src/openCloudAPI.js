@@ -35,13 +35,30 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries/${encodedKey}`;
     const url = `https://apis.roblox.com/cloud/v2/${path}`;
 
+    console.log(`[DEBUG] GetDataStoreEntry - URL: ${url}`);
+    console.log(`[DEBUG] GetDataStoreEntry - Key: ${key}, Encoded: ${encodedKey}`);
+
     const response = await axios.get(url, {
       headers: getApiHeaders(universeId),
     });
 
+    console.log(`[DEBUG] GetDataStoreEntry - Response status: ${response.status}`);
+    console.log(`[DEBUG] GetDataStoreEntry - Response data type: ${typeof response.data}`);
+    console.log(`[DEBUG] GetDataStoreEntry - Response data (truncated): ${JSON.stringify(response.data).substring(0, 200)}`);
+
     if (response.status === 200) {
+      // Check if response is an array (this means we got a list, not a single entry)
+      if (Array.isArray(response.data)) {
+        console.error(`[ERROR] GetDataStoreEntry - Received an array instead of entry. API returned list endpoint.`);
+        // Try to find the matching entry in the array
+        const entry = response.data.find(e => e.id === key);
+        if (entry) {
+          return createSuccessResponse({ data: entry });
+        }
+        return createDataStoreErrorResponse("GetDataStoreEntry", `Key "${key}" not found in datastore. Received list of entries instead.`, { data: null });
+      }
+
       // The API response should contain the value directly
-      // Roblox stores the entry value in response.data
       let data = response.data;
       
       // If the response has a 'value' property, use that
@@ -63,6 +80,7 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     return createDataStoreErrorResponse("GetDataStoreEntry", `Unexpected status: ${response.status}`, { data: null });
   } catch (error) {
     console.error(`Error getting data for key ${key}:`, error.message);
+    console.error(`[DEBUG] Error response data:`, error.response?.data);
     // Return empty data rather than erroring out, in case entry doesn't exist
     if (error.response?.status === 404) {
       return createSuccessResponse({ data: null });
