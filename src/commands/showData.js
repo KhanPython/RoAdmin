@@ -1,4 +1,4 @@
-const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags, AttachmentBuilder } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
@@ -87,41 +87,11 @@ module.exports = {
       // Get universe info
       const universeInfo = await openCloud.GetUniverseName(universeId);
 
-      // Build data fields
+      // Format the data for display
       const entryData = playerDataResult.data;
-      const fields = [];
-
-      // Handle different data structures
-      if (typeof entryData === "object" && entryData !== null) {
-        // Add any fields from the data object
-        for (const [dataKey, value] of Object.entries(entryData)) {
-          let fieldValue = typeof value === "object" ? JSON.stringify(value) : String(value);
-          
-          // Truncate if too long for Discord embed (1024 char limit)
-          if (fieldValue.length > 1020) {
-            fieldValue = fieldValue.substring(0, 1017) + "...";
-          }
-          
-          fields.push({
-            name: dataKey.charAt(0).toUpperCase() + dataKey.slice(1),
-            value: fieldValue,
-            inline: true
-          });
-        }
-      } else {
-        // If data is a simple value, display it directly
-        let dataValue = String(entryData);
-        if (dataValue.length > 1020) {
-          dataValue = dataValue.substring(0, 1017) + "...";
-        }
-        fields.push({
-          name: "Value",
-          value: dataValue,
-          inline: false
-        });
-      }
-
-      // Create embed response
+      const jsonString = JSON.stringify(entryData, null, 2); // Pretty print with 2-space indent
+      
+      // Create main embed with metadata
       const embed = new EmbedBuilder()
         .setTitle(`Datastore Entry: ${key}`)
         .setColor(0x0099FF)
@@ -129,48 +99,45 @@ module.exports = {
         .addFields(
           { name: "Key", value: key.length > 100 ? key.substring(0, 97) + "..." : key, inline: true },
           { name: "Universe ID", value: universeId.toString(), inline: true },
-          { name: "Datastore", value: datastoreName, inline: true }
-        );
-
-      if (fields.length > 0) {
-        // Add fields in batches to avoid exceeding limits
-        const fieldBatches = [];
-        let currentBatch = [];
-        
-        for (const field of fields) {
-          currentBatch.push(field);
-          // Discord embeds can have max 25 fields
-          if (currentBatch.length === 25) {
-            fieldBatches.push(currentBatch);
-            currentBatch = [];
-          }
-        }
-        if (currentBatch.length > 0) {
-          fieldBatches.push(currentBatch);
-        }
-        
-        // Add first batch to this embed
-        if (fieldBatches.length > 0) {
-          embed.addFields(fieldBatches[0]);
-          
-          // If there are more batches, note it
-          if (fieldBatches.length > 1) {
-            embed.addFields({ name: "⚠️ Data Truncated", value: `Only showing first ${fieldBatches[0].length} fields`, inline: false });
-          }
-        }
-      } else {
-        embed.addFields({ name: "Data", value: "No data stored", inline: false });
-      }
-
-      embed
+          { name: "Datastore", value: datastoreName, inline: true },
+          { name: "Data Size", value: `${jsonString.length} bytes`, inline: true }
+        )
         .setFooter({ text: "Datastore Entry Information" })
         .setTimestamp();
       
       if (universeInfo.icon) {
         embed.setThumbnail(universeInfo.icon);
       }
+
+      // Check if data fits in a code block (Discord message limit is 2000 chars, code block uses ~8 chars for delimiters)
+      if (jsonString.length < 1900) {
+        // Small data: show in code block within the embed reply
+        const codeBlockMessage = `\`\`\`json\n${jsonString}\n\`\`\``;
+        
+        await interaction.reply({
+          embeds: [embed],
+          content: codeBlockMessage,
+          flags: MessageFlags.Ephemeral,
+        });
+      } else {
+        // Large data: send as file attachment
+        const fileBuffer = Buffer.from(jsonString, 'utf-8');
+        const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.json` });
+        
+        embed.addFields({
+          name: "⚠️ Data Size",
+          value: "Data is too large to display inline. See attached JSON file.",
+          inline: false
+        });
+        
+        await interaction.reply({
+          embeds: [embed],
+          files: [attachment],
+          flags: MessageFlags.Ephemeral,
+        });
+      }
       
-      return embed;
+      return;
     } catch (error) {
       console.error("Error in showData command:", error);
       await interaction.reply({
