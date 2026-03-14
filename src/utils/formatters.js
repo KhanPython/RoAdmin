@@ -190,7 +190,7 @@ function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, o
         { name: "Datastore", value: datastoreName, inline: true },
         { name: "Scope", value: scope || "global", inline: true },
         { name: "Field", value: String(field), inline: true },
-        { name: "Old → New", value: `\`${formatJsonValue(String(oldValue ?? "undefined"))}\` → \`${formatJsonValue(String(newValue))}\``, inline: false },
+        { name: "Old → New", value: `${formatJsonValue(oldValue ?? "undefined")}\n→\n${formatJsonValue(newValue)}`, inline: false },
         { name: "Summary", value: summary, inline: false },
       ]
     : [];

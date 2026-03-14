@@ -461,12 +461,16 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.scope || "global"
         );
 
+        const resolvedFieldKey = Object.keys(currentValue).find(
+          k => k.toLowerCase() === params.field.toLowerCase()
+        ) ?? params.field;
+
         return buildUpdateDataEmbed(result, {
           key: params.key,
           universeId: params.universeId,
           datastoreName: params.datastoreName,
-          field: params.field,
-          oldValue: currentValue[params.field],
+          field: resolvedFieldKey,
+          oldValue: currentValue[resolvedFieldKey],
           newValue: params.newValue,
           summary,
           scope: params.scope || "global",
