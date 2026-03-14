@@ -218,6 +218,13 @@ async function handleMessage(client, message) {
       const batch = resultEmbeds.splice(0, 10);
       await message.channel.send({ embeds: batch });
     }
+
+    // Update the confirmation message to reflect completion
+    await reply.edit({
+      content: isBatch
+        ? `Executed ${commands.length} commands.`
+        : "Executed.",
+    }).catch(() => {});
   });
 
   collector.on("end", (_, reason) => {

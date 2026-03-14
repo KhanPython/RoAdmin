@@ -204,6 +204,11 @@ module.exports = {
               embeds: [newEmbed],
               components: previousPageTokens.length > 0 || currentPageToken ? [newButtons] : [],
             });
+          } else {
+            await message.edit({
+              embeds: [new EmbedBuilder().setTitle("Error").setColor(0xFF0000).setDescription(`Failed to load page: ${firstResponse.status}`).setTimestamp()],
+              components: [],
+            });
           }
         } else if (i.customId === "next" && currentPageToken) {
           // Store current token to go back
@@ -229,6 +234,9 @@ module.exports = {
               embeds: [newEmbed],
               components: previousPageTokens.length > 0 || currentPageToken ? [newButtons] : [],
             });
+          } else {
+            previousPageTokens.pop(); // undo the token push since navigation failed
+            await i.followUp({ content: `Failed to load next page: ${nextResponse.status}`, ephemeral: true });
           }
         } else if (i.customId === "prev" && previousPageTokens.length > 0) {
           // Go back to previous page
@@ -252,6 +260,11 @@ module.exports = {
               embeds: [newEmbed],
               components: previousPageTokens.length > 0 || currentPageToken ? [newButtons] : [],
             });
+          } else {
+            // Undo navigation since it failed
+            previousPageTokens.push(currentPageToken);
+            currentPage++;
+            await i.followUp({ content: `Failed to load previous page: ${prevResponse.status}`, ephemeral: true });
           }
         }
       });

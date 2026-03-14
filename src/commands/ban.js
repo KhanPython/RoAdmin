@@ -69,8 +69,8 @@ module.exports = {
         return 'Invalid time format! Example format: "7d" where "d" = days, "m" = months, "y" = years.';
       }
       const type = split[1].toLowerCase();
-      if (!["d", "m", "y"].includes(type)) {
-        return 'Please use "d" (days), "m" (months), or "y" (years) for duration';
+      if (!["d", "m", "y", "h"].includes(type)) {
+        return 'Please use "d" (days), "m" (months), "y" (years), or "h" (hours) for duration';
       }
     }
 

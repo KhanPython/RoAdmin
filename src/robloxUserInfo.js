@@ -1,15 +1,19 @@
 const axios = require("axios").default;
 
 exports.UserInfoById = async function UserInfoById(userId) {
-  const resp = await axios
-    .get(`https://users.roblox.com/v1/users/${userId}/`)
-    .then((response) => {
-      return { status: "**Success**", success: true, data: response };
-    })
-    .catch((err) => {
-      if (err.response.status == 404)
-        return { status: "**Error:** Invalid user id." };
-    });
-
-  return resp;
+  try {
+    const response = await axios.get(`https://users.roblox.com/v1/users/${userId}/`);
+    return { status: "Success", success: true, data: response };
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return { status: "Invalid user ID", success: false, data: null };
+    }
+    return {
+      status: err.response?.status
+        ? `HTTP Error ${err.response.status}`
+        : "Network error - Could not reach Roblox servers",
+      success: false,
+      data: null,
+    };
+  }
 };

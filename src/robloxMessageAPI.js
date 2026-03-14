@@ -7,46 +7,42 @@ exports.MessageSend = async function MessageSend(
   topic,
   apiKey
 ) {
-  const resp = await axios
-    .post(
+  try {
+    const response = await axios.post(
       `https://apis.roblox.com/messaging-service/v1/universes/${universeId}/topics/${topic}`,
-      {
-        message: message,
-      },
+      { message },
       {
         headers: {
           "x-api-key": apiKey,
           "Content-Type": "application/json",
         },
       }
-    )
-    .then((response) => {
-      if (response.status == 200)
-        return { status: "**Success**", success: true };
-      if (response.status != 200)
-        return { status: "**Error:** An unknown issue has occurred." };
-    })
-    .catch((err) => {
-      if (err.response.status == 401)
-        return {
-          status:
-            "**Error:** API key not valid for operation, user does not have authorization",
-        };
-      if (err.response.status == 403)
-        return { status: "**Error:** Publish is not allowed on universe." };
-      if (err.response.status == 500)
-        return { status: "**Error:** Server internal error / Unknown error." };
-      if (err.response.status == 400) {
-        if (
-          err.response.data ==
-          "requestMessage cannot be longer than 1024 characters. (Parameter 'requestMessage')"
-        )
-          return {
-            status:
-              "**Error:** The request message cannot be longer then 1024 characters long.",
-          };
-      }
-    });
+    );
 
-  return resp;
+    if (response.status === 200) {
+      return { status: "Success", success: true };
+    }
+    return { status: "An unknown issue has occurred", success: false };
+  } catch (err) {
+    const status = err.response?.status;
+    switch (status) {
+      case 401:
+        return { status: "API key not valid for operation, user does not have authorization", success: false };
+      case 403:
+        return { status: "Publish is not allowed on this universe", success: false };
+      case 400:
+        if (err.response?.data?.includes?.("1024 characters"))
+          return { status: "The request message cannot be longer than 1024 characters", success: false };
+        return { status: "Invalid request", success: false };
+      case 429:
+        return { status: "Rate limited - Please wait a moment before trying again", success: false };
+      case 500:
+        return { status: "Roblox server error - Try again later", success: false };
+      default:
+        return {
+          status: status ? `HTTP Error ${status}` : "Network error - Could not reach Roblox servers",
+          success: false,
+        };
+    }
+  }
 };

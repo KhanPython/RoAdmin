@@ -436,6 +436,14 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
   } catch (error) {
     logError("BAN", error);
     const status = error.response?.status;
+
+    if (status === 429) {
+      return createDataStoreErrorResponse("BanUser", `User ${userId} was recently modified. Please wait a moment before trying again.`, { expiresDate: null });
+    }
+    if (status === 409) {
+      return createDataStoreErrorResponse("BanUser", `User ${userId} already has an active ban`, { expiresDate: null });
+    }
+
     const errorMsg = getHttpErrorMessage(status) || error.message;
     return createDataStoreErrorResponse("BanUser", errorMsg, { expiresDate: null });
   }
@@ -466,6 +474,10 @@ exports.UnbanUser = async function (userId, universeId = null) {
     
     if (status === 404) {
       return createDataStoreErrorResponse("UnbanUser", `User ${userId} has no active ban`);
+    }
+
+    if (status === 429) {
+      return createDataStoreErrorResponse("UnbanUser", `User ${userId} is already unbanned or the request was rate-limited. Please wait a moment before trying again.`);
     }
     
     const errorMsg = getHttpErrorMessage(status) || error.message;
@@ -509,8 +521,18 @@ function getHttpErrorMessage(status) {
       return "Access denied - Check API key permissions";
     case 404:
       return "Not found - Invalid universe ID or user";
+    case 409:
+      return "Conflict - This action was already applied";
+    case 429:
+      return "Rate limited - Please wait a moment before trying again";
+    case 500:
+      return "Roblox server error - Try again later";
+    case 502:
+      return "Roblox server unavailable - Try again later";
+    case 503:
+      return "Roblox service temporarily unavailable - Try again later";
     default:
-      return `HTTP Error ${status}`;
+      return status ? `HTTP Error ${status}` : "Network error - Could not reach Roblox servers";
   }
 }
 
@@ -537,7 +559,7 @@ function createDataStoreErrorResponse(operation, message, additionalFields = {})
 function createSuccessResponse(additionalFields = {}) {
   return {
     success: true,
-    status: "**Success**",
+    status: "Success",
     ...additionalFields,
   };
 }
@@ -572,8 +594,10 @@ function parseDuration(duration) {
       time *= 30 * 24 * 60 * 60;
     } else if (type === "d") {
       time *= 24 * 60 * 60;
+    } else if (type === "h") {
+      time *= 60 * 60;
     } else {
-      return null;
+      throw new Error(`Unrecognised duration unit "${split[1]}". Use d (days), m (months), y (years), or h (hours).`);
     }
 
     return time;

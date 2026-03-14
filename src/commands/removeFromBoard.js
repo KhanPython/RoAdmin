@@ -134,7 +134,7 @@ module.exports = {
           .setTitle("Error")
           .setColor(0xFF0000)
           .setDescription("An unexpected error occurred")
-          .addField("Error:", error.message)
+          .addFields({ name: "Error:", value: error.message })
           .setTimestamp()
         ],
         flags: MessageFlags.Ephemeral,
