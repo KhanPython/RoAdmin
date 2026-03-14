@@ -20,6 +20,22 @@ const openCloud = require("./openCloudAPI");
 const apiCache = require("./utils/apiCache");
 const llmCache = require("./utils/llmCache");
 const { processCommand } = require("./llmProcessor");
+const { sendPaginatedList } = require("./utils/pagination");
+const {
+  buildResultEmbed,
+  buildBanEmbed,
+  buildUnbanEmbed,
+  buildCheckBanEmbed,
+  formatBanEntries,
+  buildShowDataEmbed,
+  formatJsonValue,
+  buildSetDataEmbed,
+  buildDeleteDataEmbed,
+  formatLeaderboardEntries,
+  buildRemoveFromBoardEmbed,
+  formatKeyEntries,
+  buildErrorEmbed,
+} = require("./utils/formatters");
 
 // Keywords that must appear in the message for it to be forwarded to the LLM.
 // Anything that doesn't match is silently ignored (no API call, no reply).
@@ -294,71 +310,6 @@ async function handleMessage(client, message) {
 }
 
 /**
- * Send a paginated embed with ◀ ▶ navigation for list-style results.
- * Handles cursor-based API pagination via the fetchPage callback.
- * @param {import('discord.js').TextChannel} channel
- * @param {string} authorId
- * @param {string} title
- * @param {string|null} iconUrl
- * @param {function(string|null): Promise} fetchPage  — receives pageToken, returns API result
- * @param {function(object, number): string} formatEntries  — formats result into display text
- */
-async function sendPaginatedEmbed(channel, authorId, title, iconUrl, fetchPage, formatEntries) {
-  const pageTokens = [null]; // pageTokens[i] = token to fetch page i (null = first page)
-  let currentPage = 0;
-
-  const doPage = async () => {
-    const data = await fetchPage(pageTokens[currentPage]);
-    if (!data.success) {
-      return { embed: buildEmbed("Error", data.status || "Failed to fetch data"), components: [], ok: false };
-    }
-    // Cache the token for the next page when first discovered
-    if (data.nextPageToken && currentPage + 1 >= pageTokens.length) {
-      pageTokens.push(data.nextPageToken);
-    }
-    const hasNext = currentPage + 1 < pageTokens.length;
-    const hasPrev = currentPage > 0;
-    const pageText = formatEntries(data, currentPage + 1);
-
-    const embed = new EmbedBuilder()
-      .setTitle(title)
-      .setColor(0x5865f2)
-      .setDescription(pageText || "No entries found.")
-      .setFooter({ text: `Page ${currentPage + 1}` })
-      .setTimestamp();
-    if (iconUrl) embed.setThumbnail(iconUrl);
-
-    const buttons = [];
-    if (hasPrev) buttons.push(new ButtonBuilder().setCustomId("pg_prev").setLabel("◀").setStyle(ButtonStyle.Secondary));
-    if (hasNext) buttons.push(new ButtonBuilder().setCustomId("pg_next").setLabel("▶").setStyle(ButtonStyle.Secondary));
-    const components = buttons.length > 0 ? [new ActionRowBuilder().addComponents(...buttons)] : [];
-
-    return { embed, components, ok: true };
-  };
-
-  const initial = await doPage();
-  const msg = await channel.send({ embeds: [initial.embed], components: initial.components });
-  if (!initial.ok || initial.components.length === 0) return;
-
-  const collector = msg.createMessageComponentCollector({
-    filter: i => i.user.id === authorId,
-    time: 120_000,
-  });
-
-  collector.on("collect", async (i) => {
-    if (i.customId === "pg_prev") currentPage--;
-    else currentPage++;
-    await i.deferUpdate();
-    const { embed, components } = await doPage();
-    await msg.edit({ embeds: [embed], components }).catch(() => {});
-  });
-
-  collector.on("end", () => {
-    msg.edit({ components: [] }).catch(() => {});
-  });
-}
-
-/**
  * Execute a parsed action and return a result embed.
  * For paginated actions (listBans, listKeys) the message is sent directly
  * to the channel and null is returned.
@@ -372,6 +323,8 @@ async function sendPaginatedEmbed(channel, authorId, title, iconUrl, fetchPage, 
 async function executeAction(action, params, iconUrl, channel, authorId) {
   try {
     let result;
+    // Build a minimal universeInfo-like object from the iconUrl for shared formatters
+    const universeInfo = { icon: iconUrl, name: null };
 
     switch (action) {
       case "ban":
@@ -382,80 +335,42 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.excludeAlts || false,
           params.universeId
         );
-        return buildResultEmbed(
-          `Ban User: ${params.userId}`,
-          result,
-          [
-            { name: "User ID", value: String(params.userId), inline: true },
-            { name: "Reason", value: params.reason, inline: true },
-            { name: "Duration", value: params.duration || "permanent", inline: true },
-            { name: "Exclude Alts", value: params.excludeAlts ? "Yes" : "No", inline: true },
-          ],
-          result.success
-            ? result.expiresDate
-              ? `Banned until ${result.expiresDate.toLocaleString()}`
-              : "Banned permanently"
-            : result.status,
-          iconUrl
-        );
+        return buildBanEmbed(result, {
+          userId: params.userId,
+          universeId: params.universeId,
+          reason: params.reason,
+          duration: params.duration,
+          excludeAltAccounts: params.excludeAlts || false,
+        }, universeInfo);
 
       case "unban":
         result = await openCloud.UnbanUser(params.userId, params.universeId);
-        return buildResultEmbed(
-          `Unban User: ${params.userId}`,
-          result,
-          [
-            { name: "User ID", value: String(params.userId), inline: true },
-            { name: "Universe ID", value: String(params.universeId), inline: true },
-          ],
-          undefined,
-          iconUrl
-        );
+        return buildUnbanEmbed(result, { userId: params.userId, universeId: params.universeId }, universeInfo);
 
-      case "showData":
+      case "showData": {
         result = await openCloud.GetDataStoreEntry(
           params.key,
           params.universeId,
           params.datastoreName
         );
-        return buildResultEmbed(
-          "Datastore Entry",
-          result,
-          result.success
-            ? [
-                { name: "Key", value: params.key, inline: true },
-                { name: "Datastore", value: params.datastoreName, inline: true },
-                {
-                  name: "Value",
-                  value: String(JSON.stringify(result.data)).slice(0, 1024),
-                  inline: false,
-                },
-              ]
-            : [],
-          undefined,
-          iconUrl
-        );
+        const showEmbed = buildShowDataEmbed(result, { key: params.key, universeId: params.universeId, datastoreName: params.datastoreName }, universeInfo);
+        // For NLP, also add the Value field inline (showData slash command uses a second embed)
+        if (result.success) {
+          showEmbed.addFields({ name: "Value", value: formatJsonValue(result.data), inline: false });
+        }
+        return showEmbed;
+      }
 
       case "listLeaderboard": {
-        result = await openCloud.ListOrderedDataStoreEntries(
-          params.leaderboardName,
-          params.scope || "global",
-          null,
-          params.universeId
-        );
-        const entries = result.success && Array.isArray(result.entries)
-          ? result.entries
-              .map((e, i) => `${i + 1}. \`${e.id}\` — ${e.value}`)
-              .join("\n")
-              .slice(0, 1024) || "No entries found."
-          : "No entries found.";
-        return buildResultEmbed(
-          `Leaderboard: ${params.leaderboardName}`,
-          result,
-          [{ name: "Top Entries", value: entries, inline: false }],
-          undefined,
-          iconUrl
-        );
+        await sendPaginatedList({
+          authorId,
+          title: `Leaderboard: ${params.leaderboardName}`,
+          iconUrl,
+          fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(params.leaderboardName, params.scope || "global", pt, params.universeId),
+          formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global" }),
+          sendInitial: (opts) => channel.send(opts),
+        });
+        return null;
       }
 
       case "removeFromBoard":
@@ -466,54 +381,26 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.scope || "global",
           params.universeId
         );
-        return buildResultEmbed(
-          `Remove from Leaderboard: ${params.leaderboardName}`,
-          result,
-          [
-            { name: "User ID", value: String(params.userId), inline: true },
-            { name: "Leaderboard", value: params.leaderboardName, inline: true },
-          ],
-          undefined,
-          iconUrl
-        );
+        return buildRemoveFromBoardEmbed(result, {
+          userId: params.userId,
+          universeId: params.universeId,
+          leaderboardName: params.leaderboardName,
+          key: params.key,
+        }, universeInfo);
 
-      case "checkBan": {
+      case "checkBan":
         result = await openCloud.CheckBanStatus(params.userId, params.universeId);
-        const isActive = result.success && result.active;
-        const banFields = [
-          { name: "User ID", value: String(params.userId), inline: true },
-          { name: "Status", value: isActive ? "Banned" : "Not Banned", inline: true },
-        ];
-        if (isActive) {
-          if (result.reason) banFields.push({ name: "Reason", value: result.reason, inline: false });
-          banFields.push({ name: "Banned At", value: result.startTime ? result.startTime.toLocaleString() : "Unknown", inline: true });
-          banFields.push({ name: "Expires", value: result.expiresDate ? result.expiresDate.toLocaleString() : "Permanent", inline: true });
-          banFields.push({ name: "Alt Ban", value: result.excludeAltAccounts ? "Yes" : "No", inline: true });
-        }
-        return buildResultEmbed(`Ban Status: User ${params.userId}`, result, banFields, undefined, iconUrl);
-      }
+        return buildCheckBanEmbed(result, { userId: params.userId, universeId: params.universeId }, universeInfo);
 
       case "listBans":
-        await sendPaginatedEmbed(
-          channel,
+        await sendPaginatedList({
           authorId,
-          `Active Bans — Universe ${params.universeId}`,
+          title: `Active Bans — Universe ${params.universeId}`,
           iconUrl,
-          (pt) => openCloud.ListBans(params.universeId, pt),
-          (data) => (data.bans || [])
-            .map(b => {
-              const uid = b.user?.replace("users/", "") ?? "?";
-              const r = b.gameJoinRestriction ?? {};
-              const reason = (r.displayReason || r.privateReason || "No reason").slice(0, 60);
-              let expires = "Permanent";
-              if (r.duration && r.startTime) {
-                const expDt = new Date(new Date(r.startTime).getTime() + parseInt(r.duration, 10) * 1000);
-                expires = expDt.toLocaleDateString();
-              }
-              return `**${uid}** — ${reason} *(${expires})*`;
-            })
-            .join("\n") || "No active bans."
-        );
+          fetchPage: (pt) => openCloud.ListBans(params.universeId, pt),
+          formatEntries: formatBanEntries,
+          sendInitial: (opts) => channel.send(opts),
+        });
         return null;
 
       case "setData": {
@@ -526,37 +413,30 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.datastoreName,
           params.scope || "global"
         );
-        return buildResultEmbed(
-          `Set Datastore Entry: ${params.key}`,
-          result,
-          result.success
-            ? [
-                { name: "Key", value: params.key, inline: true },
-                { name: "Datastore", value: params.datastoreName, inline: true },
-                { name: "New Value", value: String(params.value).slice(0, 200), inline: false },
-              ]
-            : [],
-          undefined,
-          iconUrl
-        );
+        return buildSetDataEmbed(result, {
+          key: params.key,
+          universeId: params.universeId,
+          datastoreName: params.datastoreName,
+          rawValue: params.value,
+          scope: params.scope || "global",
+        }, universeInfo);
       }
 
       case "listKeys":
-        await sendPaginatedEmbed(
-          channel,
+        await sendPaginatedList({
           authorId,
-          `Keys — ${params.datastoreName}`,
+          title: `Keys — ${params.datastoreName}`,
           iconUrl,
-          (pt) => openCloud.ListDataStoreKeys(params.universeId, params.datastoreName, params.scope || "global", pt),
-          (data) => (data.keys || []).map(k => `\`${k}\``).join("\n") || "No keys found."
-        );
+          fetchPage: (pt) => openCloud.ListDataStoreKeys(params.universeId, params.datastoreName, params.scope || "global", pt),
+          formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global" }),
+          sendInitial: (opts) => channel.send(opts),
+        });
         return null;
 
       case "deleteData": {
-        // Snapshot the value before deleting so the admin can restore if needed
         const snapshot = await openCloud.GetDataStoreEntry(params.key, params.universeId, params.datastoreName);
         const snapshotText = snapshot.success && snapshot.data !== null
-          ? String(JSON.stringify(snapshot.data)).slice(0, 900)
+          ? JSON.stringify(snapshot.data, null, 2).slice(0, 900)
           : "Could not retrieve value before deletion.";
 
         result = await openCloud.DeleteDataStoreEntry(
@@ -565,36 +445,21 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.datastoreName,
           params.scope || "global"
         );
-        return buildResultEmbed(
-          `Delete Datastore Entry: ${params.key}`,
-          result,
-          result.success
-            ? [
-                { name: "Key", value: params.key, inline: true },
-                { name: "Datastore", value: params.datastoreName, inline: true },
-                { name: "Value Before Deletion", value: `\`\`\`json\n${snapshotText}\n\`\`\``, inline: false },
-                { name: "⚠️ Warning", value: "This entry is permanently deleted. Use `setData` with the value above to restore it.", inline: false },
-              ]
-            : [],
-          undefined,
-          iconUrl
-        );
+        return buildDeleteDataEmbed(result, {
+          key: params.key,
+          universeId: params.universeId,
+          datastoreName: params.datastoreName,
+          scope: params.scope || "global",
+          snapshotText,
+        }, universeInfo);
       }
 
       default:
-        return new EmbedBuilder()
-          .setTitle("Unknown Action")
-          .setColor(0xff0000)
-          .setDescription(`Action "${action}" is not recognised.`)
-          .setTimestamp();
+        return buildErrorEmbed(`Action "${action}" is not recognised.`);
     }
   } catch (err) {
     console.error(`[NLP] executeAction error (${action}):`, err);
-    return new EmbedBuilder()
-      .setTitle("Error")
-      .setColor(0xff0000)
-      .setDescription(`An error occurred: ${err.message}`)
-      .setTimestamp();
+    return buildErrorEmbed(err.message);
   }
 }
 
@@ -605,21 +470,4 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
  * @param {object[]} fields
  * @param {string} [footerText]
  */
-function buildResultEmbed(title, result, fields = [], footerText = "", iconUrl = null) {
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setColor(result.success ? 0x00ff00 : 0xff0000)
-    .addFields(fields)
-    .setTimestamp();
-
-  const footer = footerText || result.status || (result.success ? "Success" : "Failed");
-  embed.setFooter({ text: footer });
-
-  if (iconUrl) {
-    embed.setThumbnail(iconUrl);
-  }
-
-  return embed;
-}
-
 module.exports = { handleMessage, pushHistory };

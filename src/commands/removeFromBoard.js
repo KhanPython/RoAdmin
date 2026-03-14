@@ -3,6 +3,7 @@ const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
+const { buildRemoveFromBoardEmbed, buildErrorEmbed } = require("../utils/formatters");
 
 module.exports = {
   category: "Moderation",
@@ -91,9 +92,10 @@ module.exports = {
           .setColor(0xFFFF00)
           .setDescription(`**Experience:** ${universeInfo.name}\n\n⚠️ ${checkResult.message}`)
           .addFields(
-            { name: "UserId:", value: userId.toString() },
-            { name: "Leaderboard Name:", value: leaderboardName },
-            { name: "Key searched:", value: keyToCheck }
+            { name: "UserId:", value: userId.toString(), inline: true },
+            { name: "Universe ID:", value: universeId.toString(), inline: true },
+            { name: "Leaderboard Name:", value: leaderboardName, inline: true },
+            { name: "Key searched:", value: keyToCheck, inline: true }
           )
           .setTimestamp();
         
@@ -111,28 +113,7 @@ module.exports = {
         pushHistory(interaction.channelId, interaction.user.id, "removeFromBoard", { userId, leaderboardName, key, universeId });
       }
 
-      // Return embed response
-      const embed = new EmbedBuilder()
-        .setTitle(`Remove Leaderboard Entry`)
-        .setColor(response.success ? 0x00FF00 : 0xFF0000)
-        .setDescription(`**Experience:** ${universeInfo.name}`)
-        .addFields(
-          { name: "UserId:", value: userId.toString() },
-          { name: "Leaderboard Name:", value: leaderboardName },
-          { name: "Key:", value: key || `${userId}` }
-        )
-        .setFooter({
-          text: response.success
-            ? `Entry successfully removed for user ${userId}`
-            : response.status
-        })
-        .setTimestamp();
-      
-      if (universeInfo.icon) {
-        embed.setThumbnail(universeInfo.icon);
-      }
-      
-      return embed;
+      return buildRemoveFromBoardEmbed(response, { userId, universeId, leaderboardName, key }, universeInfo);
     } catch (error) {
       await interaction.reply({
         embeds: [new EmbedBuilder()

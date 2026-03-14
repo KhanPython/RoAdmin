@@ -312,22 +312,19 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
       throw new Error(`API key not found in cache for universe ${universeId}`);
     }
     const keyToRemove = key ? String(key) : String(userId);
-    
-    // Use POST to set value to 0 instead of DELETE (DELETE not supported for ordered datastores)
-    const path = `universes/${universeId}/ordered-data-stores/${orderedDatastoreName}/scopes/${scopeId}/entries`;
-    const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
-    url.searchParams.append('id', keyToRemove);
-    
-    const payload = { value: 0 };
-    
-    const response = await axios.post(url.toString(), payload, {
+    const encodedName = encodeURIComponent(orderedDatastoreName);
+    const encodedKey = encodeURIComponent(keyToRemove);
+
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/ordered-data-stores/${encodedName}/scopes/${scopeId}/entries/${encodedKey}`;
+
+    const response = await axios.delete(url, {
       headers: getApiHeaders(universeId),
     });
-    
-    if (response.status === 200) {
+
+    if (response.status === 200 || response.status === 204) {
       return createSuccessResponse({ message: `Removed entry "${keyToRemove}" from ordered datastore "${orderedDatastoreName}"` });
     }
-    
+
     return createDataStoreErrorResponse("RemoveOrderedDataStoreData", `Unexpected response status: ${response.status}`);
   } catch (error) {
     console.error(`Error removing ordered datastore data for user ${userId}:`, error.message);

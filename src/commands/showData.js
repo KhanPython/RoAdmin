@@ -2,7 +2,7 @@ const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags, AttachmentBuil
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
-//
+const { buildShowDataEmbed, formatJsonValue, buildErrorEmbed } = require("../utils/formatters");
 
 module.exports = {
   category: "Player Data",
@@ -92,56 +92,26 @@ module.exports = {
       // Get universe info
       const universeInfo = await openCloud.GetUniverseName(universeId);
 
-      // Format the data for display
-      const entryData = playerDataResult.data;
-      const jsonString = JSON.stringify(entryData, null, 2); // Pretty print with 2-space indent
-      
-      // Create main embed with metadata
-      const infoEmbed = new EmbedBuilder()
-        .setTitle(`Datastore Entry`)
-        .setColor(0x0099FF)
-        .addFields(
-          { name: "Experience", value: (`${universeInfo.name}` || "Unknown").substring(0, 1000), inline: true },
-          { name: "Key", value: (`${key}`).substring(0, 1000), inline: true },
-          { name: "Universe ID", value: `${universeId}`, inline: true },
-          { name: "Datastore", value: (`${datastoreName}`).substring(0, 1000), inline: true },
-          { name: "Data Size", value: `${jsonString.length} bytes`, inline: true }
-        )
-        .setFooter({ text: "Datastore Entry Information" })
-        .setTimestamp();
-      
-      if (universeInfo.icon) {
-        infoEmbed.setThumbnail(universeInfo.icon);
-      }
+      // Build metadata embed from shared formatter
+      const infoEmbed = buildShowDataEmbed(playerDataResult, { key, universeId, datastoreName }, universeInfo);
 
-      // Format as code block
+      // Format as code block for second embed / file
+      const jsonString = JSON.stringify(playerDataResult.data, null, 2);
       const codeBlock = `\`\`\`json\n${jsonString}\n\`\`\``;
 
-      // Check if data fits in embed description (Discord text limit is 4096 chars)
       if (codeBlock.length <= 4096) {
-        // Use a second embed to display the data BELOW the metadata fields
         const dataEmbed = new EmbedBuilder()
           .setColor(0x2B2D31)
           .setDescription(codeBlock);
 
-        await interaction.editReply({
-          embeds: [infoEmbed, dataEmbed],
-        });
+        await interaction.editReply({ embeds: [infoEmbed, dataEmbed] });
       } else {
-        // Large data: send as file attachment
         const fileBuffer = Buffer.from(jsonString, 'utf-8');
         const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.json` });
-        
-        infoEmbed.addFields({
-           name: "Data",
-           value: "Data is too large to display inline. See attached JSON file.",
-           inline: false
-        });
-        
-        await interaction.editReply({
-          embeds: [infoEmbed],
-          files: [attachment],
-        });
+
+        infoEmbed.addFields({ name: "Data", value: "Data is too large to display inline. See attached JSON file.", inline: false });
+
+        await interaction.editReply({ embeds: [infoEmbed], files: [attachment] });
       }
       
       return;

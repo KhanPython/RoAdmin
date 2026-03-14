@@ -1,8 +1,9 @@
-const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { ApplicationCommandOptionType, MessageFlags } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
 const apiCache = require("./../utils/apiCache");
 const universeUtils = require("./../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
+const { buildBanEmbed, buildErrorEmbed } = require("../utils/formatters");
 
 module.exports = {
   category: "Moderation",
@@ -103,40 +104,11 @@ module.exports = {
         pushHistory(interaction.channelId, interaction.user.id, "ban", { userId, reason, duration, excludeAltAccounts, universeId });
       }
 
-      // Return embed response
-      const embed = new EmbedBuilder()
-        .setTitle(`Ban User: ${userId}`)
-        .setColor(response.success ? 0x00FF00 : 0xFF0000)
-        .setDescription(`**Experience:** ${universeInfo.name}`)
-        .addFields(
-          { name: "UserId:", value: userId.toString() },
-          { name: "Ban Reason:", value: reason },
-          { name: "Ban Duration:", value: `${duration == undefined ? "permanent" : duration}` },
-          { name: "Exclude Alts:", value: excludeAltAccounts ? "✅ Yes" : "❌ No" }
-        )
-        .setFooter({
-          text: response.success
-            ? response.expiresDate
-              ? `Player has been banned until ${response.expiresDate.toLocaleString()}`
-              : "Player has been banned permanently"
-            : response.status
-        })
-        .setTimestamp();
-      
-      if (universeInfo.icon) {
-        embed.setThumbnail(universeInfo.icon);
-      }
-      
-      return embed;
+      return buildBanEmbed(response, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo);
     } catch (error) {
       console.error("Error in ban command:", error);
       await interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setTitle("Error")
-          .setColor(0xFF0000)
-          .setDescription(`Error: ${error.message}`)
-          .setTimestamp()
-        ],
+        embeds: [buildErrorEmbed(error.message)],
         flags: MessageFlags.Ephemeral,
       });
     }

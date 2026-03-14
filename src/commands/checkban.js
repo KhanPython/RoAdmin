@@ -3,11 +3,11 @@ const openCloud = require("./../openCloudAPI");
 const apiCache = require("./../utils/apiCache");
 const universeUtils = require("./../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
-const { buildUnbanEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildCheckBanEmbed, buildErrorEmbed } = require("../utils/formatters");
 
 module.exports = {
   category: "Moderation",
-  description: "Unbans a player from the experience by UserId",
+  description: "Check the ban status of a player by UserId",
 
   slash: "both",
   testOnly: false,
@@ -21,7 +21,7 @@ module.exports = {
   options: [
     {
       name: "userid",
-      description: "The user identification",
+      description: "The user ID to check",
       required: true,
       type: ApplicationCommandOptionType.Number,
     },
@@ -37,46 +37,33 @@ module.exports = {
     const userId = interaction?.options?.getNumber("userid") || parseInt(args[0]);
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
 
-    // Validate universeId
     if (!universeId || isNaN(universeId)) {
       return "Please provide a valid Universe ID.";
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     try {
-      // Check if API key is cached, if not prompt user
       if (!openCloud.hasApiKey(universeId)) {
-        await interaction.reply({
-          embeds: [apiCache.createMissingApiKeyEmbed(universeId)],
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
         return;
       }
 
-      // Verify universe exists
       const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
       if (!universeCheck.success) {
-        await interaction.reply({
-          content: universeCheck.errorMessage,
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.editReply({ content: universeCheck.errorMessage });
         return;
       }
       const universeInfo = universeCheck.universeInfo;
-      
-      // Call Open Cloud Unban function
-      const response = await openCloud.UnbanUser(userId, universeId);
 
-      if (response.success) {
-        pushHistory(interaction.channelId, interaction.user.id, "unban", { userId, universeId });
-      }
+      const result = await openCloud.CheckBanStatus(userId, universeId);
 
-      return buildUnbanEmbed(response, { userId, universeId }, universeInfo);
+      pushHistory(interaction.channelId, interaction.user.id, "checkBan", { userId, universeId });
+
+      await interaction.editReply({ embeds: [buildCheckBanEmbed(result, { userId, universeId }, universeInfo)] });
     } catch (error) {
-      console.error("Error in unban command:", error);
-      await interaction.reply({
-        embeds: [buildErrorEmbed(error.message)],
-        flags: MessageFlags.Ephemeral,
-      });
+      console.error("Error in checkban command:", error);
+      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
     }
   },
 };
