@@ -52,6 +52,24 @@ function tryDelete(msg) {
   msg.delete().catch(() => {});
 }
 
+/** Auto-deleting temporary embed. */
+const AUTO_DELETE_MS = 8000;
+
+function tempEmbed(title, description, color = 0xff0000) {
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(color)
+    .setFooter({ text: "This message will disappear shortly" })
+    .setTimestamp();
+}
+
+async function replyTemp(message, title, description, color) {
+  const reply = await message.reply({ embeds: [tempEmbed(title, description, color)] });
+  setTimeout(() => { tryDelete(reply); }, AUTO_DELETE_MS);
+  return reply;
+}
+
 /**
  * Main entry point — call from client.on('messageCreate', ...)
  * @param {import('discord.js').Client} client
@@ -71,24 +89,17 @@ async function handleMessage(client, message) {
 
   // ── Permission & setup checks ────────────────────────────────────────────
   if (!message.member?.permissions.has("Administrator")) {
-    const reply = await message.reply({ content: "❌ Administrator permission required." });
-    setTimeout(() => { tryDelete(reply); }, 5000);
+    await replyTemp(message, "Permission Denied", "You need **Administrator** permission to use this command.");
     return;
   }
 
   if (!llmCache.hasLlmKey()) {
-    const reply = await message.reply({
-      content: "❌ No LLM API key configured. An administrator must run `/setllmkey` first.",
-    });
-    setTimeout(() => { tryDelete(reply); }, 5000);
+    await replyTemp(message, "Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
     return;
   }
 
   if (!textRaw) {
-    const reply = await message.reply({
-      content: "How can I help? Try something like: `ban user 12345 for cheating in MyGame`",
-    });
-    setTimeout(() => { tryDelete(reply); }, 10000);
+    await replyTemp(message, "How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
     return;
   }
 
@@ -100,30 +111,24 @@ async function handleMessage(client, message) {
     parsed = await processCommand(textRaw, knownUniverses, history);
   } catch (err) {
     console.error("[NLP] Unexpected error calling processCommand:", err);
-    const reply = await message.reply({ content: "❌ Failed to process your request. Please try again." });
-    setTimeout(() => { tryDelete(reply); }, 5000);
+    await replyTemp(message, "Processing Error", "Failed to process your request. Please try again.");
     return;
   }
 
   // ── Handle LLM response ───────────────────────────────────────────────────
   if (!parsed.action) {
-    const reply = await message.reply({ content: parsed.confirmation_summary || "I couldn't understand that as a command." });
-    setTimeout(() => { tryDelete(reply); }, 10000);
+    await replyTemp(message, "Unrecognised Command", parsed.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
     return;
   }
 
   if (parsed.missing.length > 0) {
-    const reply = await message.reply({
-      content: `I need more information to proceed. Missing: **${parsed.missing.join(", ")}**`,
-    });
-    setTimeout(() => { tryDelete(reply); }, 10000);
+    await replyTemp(message, "Missing Information", `I need more details to proceed:\n**${parsed.missing.join(", ")}**`, 0xffa500);
     return;
   }
 
   const { universeId } = parsed.parameters;
   if (universeId && !apiCache.hasApiKey(universeId)) {
-    const reply = await message.reply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
-    setTimeout(() => { tryDelete(reply); }, 10000);
+    await replyTemp(message, "API Key Missing", `No API key cached for Universe **${universeId}**.\nUse \`/setapikey\` to configure one.`);
     return;
   }
 
