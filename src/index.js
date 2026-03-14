@@ -38,7 +38,7 @@ client.on("clientReady", async () => {
       mongoUri: "",
     });
 
-    console.log("Bot is ready!");
+    console.log("Bot is ready to use!");
   } catch (error) {
     console.error("Error:", error);
   }
