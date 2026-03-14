@@ -107,23 +107,21 @@ function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
 
 // ─── List Bans (paginated formatEntries callback) ───────────────────────────
 
-function formatBanEntries(data) {
+function formatBanEntries(data, page) {
   const bans = data.bans || [];
   if (!bans.length) return "No active bans.";
-  const rows = bans.map(b => {
-    const uid = (b.user?.replace("users/", "") ?? "?").padEnd(14);
+  const offset = (page - 1) * 10;
+  return bans.map((b, i) => {
+    const uid = b.user?.replace("users/", "") ?? "?";
     const r = b.gameJoinRestriction ?? {};
-    const reason = (r.displayReason || r.privateReason || "No reason").slice(0, 34).padEnd(35);
+    const reason = r.displayReason || r.privateReason || "No reason";
     let expires = "Permanent";
     if (r.duration && r.startTime) {
       const expDt = new Date(new Date(r.startTime).getTime() + parseInt(r.duration, 10) * 1000);
       expires = expDt.toLocaleDateString();
     }
-    return `${uid}${reason}${expires}`;
-  });
-  const header = `${"UserID".padEnd(14)}${"Reason".padEnd(35)}Expires`;
-  const sep = "-".repeat(header.length);
-  return `\`\`\`\n${[header, sep, ...rows].join("\n")}\n\`\`\``;
+    return `**${offset + i + 1}.** \`${uid}\` — ${reason}\n> Expires: ${expires}`;
+  }).join("\n\n");
 }
 
 // ─── Show Data ──────────────────────────────────────────────────────────────
@@ -140,21 +138,21 @@ function formatJsonValue(data) {
 }
 
 function buildShowDataEmbed(result, { key, universeId, datastoreName }, universeInfo) {
-  const valueDisplay = result.success ? formatJsonValue(result.data) : "No data";
-  const fields = result.success
-    ? [
-        { name: "Key", value: String(key).substring(0, 1000), inline: true },
-        { name: "Datastore", value: String(datastoreName).substring(0, 1000), inline: true },
-        { name: "Universe ID", value: String(universeId), inline: true },
-        { name: "Data Size", value: `${JSON.stringify(result.data ?? "", null, 2).length} bytes`, inline: true },
-      ]
-    : [];
+  const fields = [
+    { name: "Key", value: String(key).substring(0, 1000), inline: true },
+    { name: "Datastore", value: String(datastoreName).substring(0, 1000), inline: true },
+    { name: "Universe ID", value: String(universeId), inline: true },
+  ];
+
+  if (result.success) {
+    fields.push({ name: "Data Size", value: `${JSON.stringify(result.data ?? "", null, 2).length} bytes`, inline: true });
+  }
 
   return buildResultEmbed(
     "Datastore Entry",
     result,
     fields,
-    "Datastore Entry Information",
+    result.success ? "Datastore Entry Information" : result.status,
     universeInfo?.icon ?? null,
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );

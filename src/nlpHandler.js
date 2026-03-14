@@ -355,8 +355,10 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
         );
         const showEmbed = buildShowDataEmbed(result, { key: params.key, universeId: params.universeId, datastoreName: params.datastoreName }, universeInfo);
         // For NLP, also add the Value field inline (showData slash command uses a second embed)
-        if (result.success) {
+        if (result.success && result.data !== null && result.data !== undefined) {
           showEmbed.addFields({ name: "Value", value: formatJsonValue(result.data), inline: false });
+        } else if (result.success) {
+          showEmbed.addFields({ name: "Value", value: "No data found for this key.", inline: false });
         }
         return showEmbed;
       }

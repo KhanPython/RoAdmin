@@ -536,7 +536,7 @@ exports.ListBans = async function (universeId, pageToken = null) {
     if (!universeId) throw new Error("Universe ID is required");
     const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions`);
     url.searchParams.set("filter", "gameJoinRestriction.active==true");
-    url.searchParams.set("maxPageSize", "20");
+    url.searchParams.set("maxPageSize", "10");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     const response = await axios.get(url.toString(), { headers: getApiHeaders(universeId) });
     if (response.status === 200) {

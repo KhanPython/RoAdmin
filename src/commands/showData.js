@@ -82,7 +82,14 @@ module.exports = {
       // Get datastore entry
       const playerDataResult = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
       
-      if (!playerDataResult.success || !playerDataResult.data) {
+      if (!playerDataResult.success) {
+        await interaction.editReply({
+           content: `Failed to fetch key "${key}" in datastore "${datastoreName}": ${playerDataResult.status || 'Unknown error'}`
+        });
+        return;
+      }
+
+      if (playerDataResult.data === null || playerDataResult.data === undefined) {
         await interaction.editReply({
            content: `No data found for key "${key}" in datastore "${datastoreName}".`
         });
