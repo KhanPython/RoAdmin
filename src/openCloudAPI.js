@@ -655,4 +655,6 @@ exports.getApiKey = apiCache.getApiKey;
 exports.hasApiKey = apiCache.hasApiKey;
 exports.clearApiKey = apiCache.clearApiKey;
 exports.getCachedUniverseIds = apiCache.getCachedUniverseIds;
+exports.setUniverseName = apiCache.setUniverseName;
+exports.getCachedUniverses = apiCache.getCachedUniverses;
 

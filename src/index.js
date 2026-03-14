@@ -8,6 +8,7 @@ globalThis.ReadableStream = ReadableStream;
 const discord = require("discord.js");
 const wokcommands = require("wokcommands");
 const path = require("path");
+const { handleMessage } = require("./nlpHandler");
 
 const discordToken = process.env.DISCORD_TOKEN;
 
@@ -16,7 +17,11 @@ if (!discordToken) {
 }
 
 const client = new discord.Client({
-  intents: [discord.IntentsBitField.Flags.Guilds, discord.IntentsBitField.Flags.GuildMessages],
+  intents: [
+    discord.IntentsBitField.Flags.Guilds,
+    discord.IntentsBitField.Flags.GuildMessages,
+    discord.IntentsBitField.Flags.MessageContent,
+  ],
   allowedMentions: { parse: ["users"] },
 });
 
@@ -38,5 +43,7 @@ client.on("clientReady", async () => {
     console.error("Error:", error);
   }
 });
+
+client.on("messageCreate", (message) => handleMessage(client, message));
 
 client.login(discordToken);

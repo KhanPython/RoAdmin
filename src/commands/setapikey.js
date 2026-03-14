@@ -59,6 +59,8 @@ module.exports = {
       let universeInfo;
       try {
         universeInfo = await openCloud.GetUniverseName(universeId);
+        // Cache the universe name so NLP can resolve game names to IDs
+        openCloud.setUniverseName(universeId, universeInfo.name);
       } catch (verifyError) {
         // API key is stored, but verification of universe info failed
         console.error("Universe verification failed:", verifyError.message);
