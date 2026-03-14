@@ -25,7 +25,7 @@ const client = new discord.Client({
   allowedMentions: { parse: ["users"] },
 });
 
-client.on("clientReady", async () => {
+client.once("ready", async () => {
   try {
     // Clear all global commands
     await client.application?.commands.set([]);
