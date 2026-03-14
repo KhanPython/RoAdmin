@@ -2,6 +2,7 @@ const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags } = require("di
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
+const { pushHistory } = require("../nlpHandler");
 
 module.exports = {
   category: "Moderation",
@@ -105,6 +106,10 @@ module.exports = {
 
       // Key exists, proceed with removal
       const response = await openCloud.RemoveOrderedDataStoreData(userId, leaderboardName, key, "global", universeId);
+
+      if (response.success) {
+        pushHistory(interaction.channelId, interaction.user.id, "removeFromBoard", { userId, leaderboardName, key, universeId });
+      }
 
       // Return embed response
       const embed = new EmbedBuilder()

@@ -41,7 +41,12 @@ async function processCommand(text, knownUniverses = [], history = []) {
 Available actions and their parameters:
 - ban            → required: userId(number), reason(string), universeId(number)  |  optional: duration(string e.g. "7d","2m","1y"), excludeAlts(boolean, default false)
 - unban          → required: userId(number), universeId(number)
+- checkBan       → required: userId(number), universeId(number)
+- listBans       → required: universeId(number)
 - showData       → required: key(string), universeId(number), datastoreName(string)
+- setData        → required: key(string), value(string), universeId(number), datastoreName(string)  |  optional: scope(string, default "global")
+- deleteData     → required: key(string), universeId(number), datastoreName(string)  |  optional: scope(string, default "global")  |  NOTE: key is the specific entry key (e.g. a player's userId as string like "12345"), NOT the datastore name itself. Warn the user in confirmation_summary if the key looks like a generic name rather than a player ID.
+- listKeys       → required: universeId(number), datastoreName(string)  |  optional: scope(string, default "global")
 - listLeaderboard → required: leaderboardName(string), universeId(number)  |  optional: scope(string, default "global")
 - removeFromBoard → required: userId(number), leaderboardName(string), universeId(number)  |  optional: key(string, defaults to userId as string)
 

@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ApplicationC
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
+const { pushHistory } = require("../nlpHandler");
 
 const ENTRIES_PER_PAGE = 10;
 
@@ -72,6 +73,10 @@ module.exports = {
       
       // Fetch first page to get total count
       let response = await openCloud.ListOrderedDataStoreEntries(leaderboardName, scopeId, null, universeId);
+
+      if (response.success) {
+        pushHistory(interaction.channelId, interaction.user.id, "listLeaderboard", { leaderboardName, scopeId, universeId });
+      }
 
       if (!response.success) {
         return new EmbedBuilder()

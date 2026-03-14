@@ -2,6 +2,7 @@ const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags } = require("di
 const openCloud = require("./../openCloudAPI");
 const apiCache = require("./../utils/apiCache");
 const universeUtils = require("./../utils/universeUtils");
+const { pushHistory } = require("../nlpHandler");
 
 module.exports = {
   category: "Moderation",
@@ -97,6 +98,10 @@ module.exports = {
       
       // Call Open Cloud Ban function
       const response = await openCloud.BanUser(userId, reason, duration, excludeAltAccounts, universeId);
+
+      if (response.success) {
+        pushHistory(interaction.channelId, interaction.user.id, "ban", { userId, reason, duration, excludeAltAccounts, universeId });
+      }
 
       // Return embed response
       const embed = new EmbedBuilder()

@@ -487,6 +487,171 @@ exports.UnbanUser = async function (userId, universeId = null) {
 
 
 // ============================================
+// BAN STATUS & LISTING
+// ============================================
+
+/**
+ * Check the ban status of a specific user.
+ * @param {number} userId
+ * @param {number} universeId
+ * @returns {Promise<{success: boolean, active: boolean, reason: string|null, startTime: Date|null, expiresDate: Date|null, excludeAltAccounts: boolean, status: string}>}
+ */
+exports.CheckBanStatus = async function (userId, universeId) {
+  try {
+    if (!universeId) throw new Error("Universe ID is required");
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${userId}`;
+    const response = await axios.get(url, { headers: getApiHeaders(universeId) });
+    if (response.status === 200) {
+      const restriction = response.data.gameJoinRestriction ?? {};
+      const active = restriction.active ?? false;
+      let expiresDate = null;
+      if (active && restriction.duration && restriction.startTime) {
+        const durationSeconds = parseInt(restriction.duration, 10);
+        expiresDate = new Date(new Date(restriction.startTime).getTime() + durationSeconds * 1000);
+      }
+      return createSuccessResponse({
+        active,
+        reason: restriction.displayReason || restriction.privateReason || null,
+        startTime: restriction.startTime ? new Date(restriction.startTime) : null,
+        expiresDate,
+        excludeAltAccounts: restriction.excludeAltAccounts ?? false,
+      });
+    }
+    return createDataStoreErrorResponse("CheckBanStatus", `Unexpected status: ${response.status}`);
+  } catch (error) {
+    logError("CHECK_BAN", error);
+    const status = error.response?.status;
+    if (status === 404) {
+      return createSuccessResponse({ active: false, reason: null, startTime: null, expiresDate: null, excludeAltAccounts: false });
+    }
+    return createDataStoreErrorResponse("CheckBanStatus", getHttpErrorMessage(status) || error.message);
+  }
+};
+
+/**
+ * List active bans in a universe (paginated, 20 per page).
+ * @param {number} universeId
+ * @param {string|null} pageToken
+ * @returns {Promise<{success: boolean, bans: object[], nextPageToken: string|null, status: string}>}
+ */
+exports.ListBans = async function (universeId, pageToken = null) {
+  try {
+    if (!universeId) throw new Error("Universe ID is required");
+    const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions`);
+    url.searchParams.set("filter", "gameJoinRestriction.active==true");
+    url.searchParams.set("maxPageSize", "20");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await axios.get(url.toString(), { headers: getApiHeaders(universeId) });
+    if (response.status === 200) {
+      return createSuccessResponse({
+        bans: response.data.userRestrictions || [],
+        nextPageToken: response.data.nextPageToken || null,
+      });
+    }
+    return createDataStoreErrorResponse("ListBans", `Unexpected status: ${response.status}`);
+  } catch (error) {
+    logError("LIST_BANS", error);
+    const status = error.response?.status;
+    return createDataStoreErrorResponse("ListBans", getHttpErrorMessage(status) || error.message);
+  }
+};
+
+// ============================================
+// DATASTORE WRITE & DELETE
+// ============================================
+
+/**
+ * Set (create or update) a standard datastore entry.
+ * Attempts PATCH first; falls back to POST if the key doesn't exist yet.
+ * @param {string} key
+ * @param {any} value - Raw JS value to store
+ * @param {number} universeId
+ * @param {string} datastoreName
+ * @param {string} [scope="global"]
+ * @returns {Promise<{success: boolean, status: string}>}
+ */
+exports.SetDataStoreEntry = async function (key, value, universeId, datastoreName, scope = "global") {
+  try {
+    if (!universeId) throw new Error("Universe ID is required");
+    if (!datastoreName) throw new Error("Datastore name is required");
+    if (!key) throw new Error("Entry key is required");
+    const encodedKey = encodeURIComponent(key);
+    const entryUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries/${encodedKey}`;
+    try {
+      const response = await axios.patch(entryUrl, { value }, { headers: getApiHeaders(universeId) });
+      if (response.status === 200 || response.status === 201) return createSuccessResponse();
+    } catch (patchErr) {
+      if (patchErr.response?.status !== 404) throw patchErr;
+      // Key doesn't exist yet — create it
+      const createUrl = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries`);
+      createUrl.searchParams.set("id", key);
+      const postResponse = await axios.post(createUrl.toString(), { value }, { headers: getApiHeaders(universeId) });
+      if (postResponse.status === 200 || postResponse.status === 201) return createSuccessResponse();
+    }
+    return createDataStoreErrorResponse("SetDataStoreEntry", "Unexpected response from API");
+  } catch (error) {
+    logError("SET_DATA", error);
+    const status = error.response?.status;
+    return createDataStoreErrorResponse("SetDataStoreEntry", getHttpErrorMessage(status) || error.message);
+  }
+};
+
+/**
+ * List all keys in a standard datastore (paginated, 20 per page).
+ * @param {number} universeId
+ * @param {string} datastoreName
+ * @param {string} [scope="global"]
+ * @param {string|null} pageToken
+ * @returns {Promise<{success: boolean, keys: string[], nextPageToken: string|null, status: string}>}
+ */
+exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "global", pageToken = null) {
+  try {
+    if (!universeId) throw new Error("Universe ID is required");
+    if (!datastoreName) throw new Error("Datastore name is required");
+    const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries`);
+    url.searchParams.set("maxPageSize", "20");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await axios.get(url.toString(), { headers: getApiHeaders(universeId) });
+    if (response.status === 200) {
+      const raw = response.data.dataStoreEntries || response.data.entries || [];
+      const keys = raw.map(e => e.id || e.path?.split("/").pop() || "?");
+      return createSuccessResponse({ keys, nextPageToken: response.data.nextPageToken || null });
+    }
+    return createDataStoreErrorResponse("ListDataStoreKeys", `Unexpected status: ${response.status}`);
+  } catch (error) {
+    logError("LIST_KEYS", error);
+    const status = error.response?.status;
+    return createDataStoreErrorResponse("ListDataStoreKeys", getHttpErrorMessage(status) || error.message);
+  }
+};
+
+/**
+ * Hard-delete a key from a standard datastore.
+ * @param {string} key
+ * @param {number} universeId
+ * @param {string} datastoreName
+ * @param {string} [scope="global"]
+ * @returns {Promise<{success: boolean, status: string}>}
+ */
+exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, scope = "global") {
+  try {
+    if (!universeId) throw new Error("Universe ID is required");
+    if (!datastoreName) throw new Error("Datastore name is required");
+    if (!key) throw new Error("Entry key is required");
+    const encodedKey = encodeURIComponent(key);
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries/${encodedKey}`;
+    const response = await axios.delete(url, { headers: getApiHeaders(universeId) });
+    if (response.status === 200 || response.status === 204) return createSuccessResponse();
+    return createDataStoreErrorResponse("DeleteDataStoreEntry", `Unexpected status: ${response.status}`);
+  } catch (error) {
+    logError("DELETE_DATA", error);
+    const status = error.response?.status;
+    if (status === 404) return createDataStoreErrorResponse("DeleteDataStoreEntry", `Key "${key}" not found in datastore`);
+    return createDataStoreErrorResponse("DeleteDataStoreEntry", getHttpErrorMessage(status) || error.message);
+  }
+};
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
