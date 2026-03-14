@@ -7,20 +7,20 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const llmCache = require("./utils/llmCache");
 
-const FALLBACK = {
+const FALLBACK = [{
   action: null,
   parameters: {},
   missing: [],
   confirmation_summary: "Failed to parse command. Please try again.",
-};
+}];
 
 /**
- * Parse a natural language message into a structured command.
+ * Parse a natural language message into one or more structured commands.
  *
  * @param {string} text - The user's message (mention already stripped)
  * @param {{ id: number, name: string }[]} knownUniverses - Cached universe name→ID mappings
  * @param {{ action: string, parameters: object, timestamp: string }[]} history - Recent commands in this channel
- * @returns {Promise<{ action: string|null, parameters: object, missing: string[], confirmation_summary: string }>}
+ * @returns {Promise<{ action: string|null, parameters: object, missing: string[], confirmation_summary: string }[]>}
  */
 async function processCommand(text, knownUniverses = [], history = []) {
   const universeContext =
@@ -48,20 +48,32 @@ Available actions and their parameters:
 ${universeContext}
 ${historyContext}
 
-Output schema — return ONLY this JSON object, nothing else:
-{
+BATCH COMMANDS: When the user wants to perform the same action on multiple targets (e.g. "ban 123 and 456", "ban users from this table: {123, 456, 789}", "unban all of these: 1, 2, 3"), return a JSON ARRAY of command objects — one per target. Each object must be fully self-contained with all parameters. Shared parameters (universeId, reason, etc.) should be copied into every object.
+
+Output schema — return ONLY this JSON, nothing else:
+
+For a SINGLE command:
+[{
   "action": "<one of the action names above, or null if the message is not a recognizable admin command>",
   "parameters": { "<only parameters explicitly found or resolvable from the message>" },
   "missing": ["<names of required parameters absent from the message>"],
   "confirmation_summary": "<one concise sentence describing what will happen, or a brief reason if action is null>"
-}`;
+}]
+
+For MULTIPLE commands (batch):
+[
+  { "action": "...", "parameters": { ... }, "missing": [...], "confirmation_summary": "..." },
+  { "action": "...", "parameters": { ... }, "missing": [...], "confirmation_summary": "..." }
+]
+
+ALWAYS return an array, even for a single command.`;
 
   try {
     const client = new Anthropic.default({ apiKey: llmCache.getLlmKey() });
 
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
+      max_tokens: 2048,
       system: systemPrompt,
       messages: [{ role: "user", content: text }],
     });
@@ -73,13 +85,15 @@ Output schema — return ONLY this JSON object, nothing else:
 
     const parsed = JSON.parse(cleaned);
 
-    // Normalise to expected shape
-    return {
-      action: parsed.action ?? null,
-      parameters: parsed.parameters ?? {},
-      missing: Array.isArray(parsed.missing) ? parsed.missing : [],
-      confirmation_summary: parsed.confirmation_summary ?? "",
-    };
+    // Normalise: always return an array of command objects
+    const commands = Array.isArray(parsed) ? parsed : [parsed];
+
+    return commands.map(cmd => ({
+      action: cmd.action ?? null,
+      parameters: cmd.parameters ?? {},
+      missing: Array.isArray(cmd.missing) ? cmd.missing : [],
+      confirmation_summary: cmd.confirmation_summary ?? "",
+    }));
   } catch (err) {
     console.error("[NLP] processCommand error:", err.message);
     return FALLBACK;

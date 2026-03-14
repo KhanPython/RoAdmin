@@ -47,27 +47,16 @@ function getHistory(channelId) {
   return commandHistory.get(channelId) || [];
 }
 
-/** Silently delete a message (best-effort). */
-function tryDelete(msg) {
-  msg.delete().catch(() => {});
-}
-
-/** Auto-deleting temporary embed. */
-const AUTO_DELETE_MS = 8000;
-
-function tempEmbed(title, description, color = 0xff0000) {
+function buildEmbed(title, description, color = 0xff0000) {
   return new EmbedBuilder()
     .setTitle(title)
     .setDescription(description)
     .setColor(color)
-    .setFooter({ text: "This message will disappear shortly" })
     .setTimestamp();
 }
 
-async function replyTemp(message, title, description, color) {
-  const reply = await message.reply({ embeds: [tempEmbed(title, description, color)] });
-  setTimeout(() => { tryDelete(reply); }, AUTO_DELETE_MS);
-  return reply;
+async function replyEmbed(message, title, description, color) {
+  return message.reply({ embeds: [buildEmbed(title, description, color)] });
 }
 
 /**
@@ -79,7 +68,6 @@ async function handleMessage(client, message) {
   // ── Fast ignore conditions (zero cost) ──────────────────────────────────
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
-  console.log(`[NLP] handleMessage called for msgId=${message.id} at ${Date.now()} pid=${process.pid}`);
 
   const textRaw = message.content.replace(/<@!?\d+>/g, "").trim();
   const textLower = textRaw.toLowerCase();
@@ -90,68 +78,101 @@ async function handleMessage(client, message) {
 
   // ── Permission & setup checks ────────────────────────────────────────────
   if (!message.member?.permissions.has("Administrator")) {
-    await replyTemp(message, "Permission Denied", "You need **Administrator** permission to use this command.");
+    await replyEmbed(message, "Permission Denied", "You need **Administrator** permission to use this command.");
     return;
   }
 
   if (!llmCache.hasLlmKey()) {
-    await replyTemp(message, "Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
+    await replyEmbed(message, "Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
     return;
   }
 
   if (!textRaw) {
-    await replyTemp(message, "How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
+    await replyEmbed(message, "How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
     return;
   }
 
   // ── LLM parsing ──────────────────────────────────────────────────────────
-  let parsed;
+  let commands;
   try {
     const knownUniverses = apiCache.getCachedUniverses();
     const history = getHistory(message.channel.id);
-    parsed = await processCommand(textRaw, knownUniverses, history);
+    commands = await processCommand(textRaw, knownUniverses, history);
   } catch (err) {
     console.error("[NLP] Unexpected error calling processCommand:", err);
-    await replyTemp(message, "Processing Error", "Failed to process your request. Please try again.");
+    await replyEmbed(message, "Processing Error", "Failed to process your request. Please try again.");
     return;
   }
 
-  // ── Handle LLM response ───────────────────────────────────────────────────
-  if (!parsed.action) {
-    await replyTemp(message, "Unrecognised Command", parsed.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
+  // ── Validate all parsed commands ───────────────────────────────────────────
+  // If the first command has no action, the whole request was unrecognised
+  if (!commands[0]?.action) {
+    await replyEmbed(message, "Unrecognised Command", commands[0]?.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
     return;
   }
 
-  if (parsed.missing.length > 0) {
-    await replyTemp(message, "Missing Information", `I need more details to proceed:\n**${parsed.missing.join(", ")}**`, 0xffa500);
+  // Collect all missing params across commands
+  const allMissing = [...new Set(commands.flatMap(cmd => cmd.missing))];
+  if (allMissing.length > 0) {
+    await replyEmbed(message, "Missing Information", `I need more details to proceed:\n**${allMissing.join(", ")}**`, 0xffa500);
     return;
   }
 
-  const { universeId } = parsed.parameters;
-  if (universeId && !apiCache.hasApiKey(universeId)) {
-    await replyTemp(message, "API Key Missing", `No API key cached for Universe **${universeId}**.\nUse \`/setapikey\` to configure one.`);
-    return;
+  // Check API keys for all referenced universes
+  const universeIds = [...new Set(commands.map(cmd => cmd.parameters.universeId).filter(Boolean))];
+  for (const uid of universeIds) {
+    if (!apiCache.hasApiKey(uid)) {
+      await replyEmbed(message, "API Key Missing", `No API key cached for Universe **${uid}**.\nUse \`/setapikey\` to configure one.`);
+      return;
+    }
   }
 
-  // ── Confirmation embed ────────────────────────────────────────────────────
-  const fields = Object.entries(parsed.parameters).map(([name, value]) => ({
-    name,
-    value: String(value),
-    inline: true,
+  // ── Fetch experience info for all referenced universes ─────────────────────
+  const universeInfoMap = new Map(); // universeId → { name, icon, ... }
+  await Promise.all(universeIds.map(async (uid) => {
+    try {
+      universeInfoMap.set(uid, await openCloud.GetUniverseName(uid));
+    } catch (_) { /* icon is optional */ }
   }));
 
-  const confirmEmbed = new EmbedBuilder()
-    .setTitle(`Confirm: ${parsed.action}`)
-    .setDescription(parsed.confirmation_summary)
-    .setColor(0xffa500)
-    .addFields(fields)
-    .setFooter({ text: "This request expires in 60 seconds" })
-    .setTimestamp();
+  // For the confirmation thumbnail, pick the first universe's icon
+  const primaryIcon = universeInfoMap.values().next().value?.icon ?? null;
+  const isBatch = commands.length > 1;
+
+  // ── Confirmation embed ────────────────────────────────────────────────────
+  let confirmEmbed;
+
+  if (isBatch) {
+    const summary = commands.map((cmd, i) => `**${i + 1}.** ${cmd.confirmation_summary}`).join("\n");
+    confirmEmbed = new EmbedBuilder()
+      .setTitle(`Confirm Batch: ${commands.length} ${commands[0].action} commands`)
+      .setDescription(summary)
+      .setColor(0xffa500)
+      .setFooter({ text: "This request expires in 60 seconds" })
+      .setTimestamp();
+  } else {
+    const fields = Object.entries(commands[0].parameters).map(([name, value]) => ({
+      name,
+      value: String(value),
+      inline: true,
+    }));
+    confirmEmbed = new EmbedBuilder()
+      .setTitle(`Confirm: ${commands[0].action}`)
+      .setDescription(commands[0].confirmation_summary)
+      .setColor(0xffa500)
+      .addFields(fields)
+      .setFooter({ text: "This request expires in 60 seconds" })
+      .setTimestamp();
+  }
+
+  if (primaryIcon) {
+    confirmEmbed.setThumbnail(primaryIcon);
+  }
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("nlp_confirm")
-      .setLabel("Confirm")
+      .setLabel(isBatch ? `Confirm All (${commands.length})` : "Confirm")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId("nlp_cancel")
@@ -173,26 +194,35 @@ async function handleMessage(client, message) {
     collector.stop("handled");
 
     if (i.customId === "nlp_cancel") {
-      tryDelete(reply);
+      await i.update({ content: "Cancelled.", embeds: [], components: [] });
       return;
     }
 
-    // Confirm — execute
-    await i.update({ content: "Executing…", embeds: [], components: [] });
+    // Confirm — execute all commands
+    await i.update({
+      content: isBatch ? `Executing ${commands.length} commands…` : "Executing…",
+      embeds: [],
+      components: [],
+    });
 
-    const resultEmbed = await executeAction(parsed.action, parsed.parameters);
+    const resultEmbeds = [];
+    for (const cmd of commands) {
+      const iconUrl = universeInfoMap.get(cmd.parameters.universeId)?.icon ?? null;
+      const resultEmbed = await executeAction(cmd.action, cmd.parameters, iconUrl);
+      resultEmbeds.push(resultEmbed);
+      pushHistory(message.channel.id, cmd.action, cmd.parameters);
+    }
 
-    // Save to history for context in future commands
-    pushHistory(message.channel.id, parsed.action, parsed.parameters);
-
-    // Post result publicly in the channel, then delete the confirmation
-    await message.channel.send({ embeds: [resultEmbed] });
-    tryDelete(reply);
+    // Discord allows up to 10 embeds per message — split if needed
+    while (resultEmbeds.length > 0) {
+      const batch = resultEmbeds.splice(0, 10);
+      await message.channel.send({ embeds: batch });
+    }
   });
 
   collector.on("end", (_, reason) => {
     if (reason === "time") {
-      tryDelete(reply);
+      reply.edit({ components: [] }).catch(() => {});
     }
   });
 }
@@ -203,7 +233,7 @@ async function handleMessage(client, message) {
  * @param {object} params
  * @returns {Promise<EmbedBuilder>}
  */
-async function executeAction(action, params) {
+async function executeAction(action, params, iconUrl) {
   try {
     let result;
 
@@ -229,7 +259,8 @@ async function executeAction(action, params) {
             ? result.expiresDate
               ? `Banned until ${result.expiresDate.toLocaleString()}`
               : "Banned permanently"
-            : result.status
+            : result.status,
+          iconUrl
         );
 
       case "unban":
@@ -240,7 +271,9 @@ async function executeAction(action, params) {
           [
             { name: "User ID", value: String(params.userId), inline: true },
             { name: "Universe ID", value: String(params.universeId), inline: true },
-          ]
+          ],
+          undefined,
+          iconUrl
         );
 
       case "showData":
@@ -262,7 +295,9 @@ async function executeAction(action, params) {
                   inline: false,
                 },
               ]
-            : []
+            : [],
+          undefined,
+          iconUrl
         );
 
       case "listLeaderboard": {
@@ -281,7 +316,9 @@ async function executeAction(action, params) {
         return buildResultEmbed(
           `Leaderboard: ${params.leaderboardName}`,
           result,
-          [{ name: "Top Entries", value: entries, inline: false }]
+          [{ name: "Top Entries", value: entries, inline: false }],
+          undefined,
+          iconUrl
         );
       }
 
@@ -299,7 +336,9 @@ async function executeAction(action, params) {
           [
             { name: "User ID", value: String(params.userId), inline: true },
             { name: "Leaderboard", value: params.leaderboardName, inline: true },
-          ]
+          ],
+          undefined,
+          iconUrl
         );
 
       default:
@@ -326,7 +365,7 @@ async function executeAction(action, params) {
  * @param {object[]} fields
  * @param {string} [footerText]
  */
-function buildResultEmbed(title, result, fields = [], footerText = "") {
+function buildResultEmbed(title, result, fields = [], footerText = "", iconUrl = null) {
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setColor(result.success ? 0x00ff00 : 0xff0000)
@@ -335,6 +374,10 @@ function buildResultEmbed(title, result, fields = [], footerText = "") {
 
   const footer = footerText || result.status || (result.success ? "Success" : "Failed");
   embed.setFooter({ text: footer });
+
+  if (iconUrl) {
+    embed.setThumbnail(iconUrl);
+  }
 
   return embed;
 }

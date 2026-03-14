@@ -37,11 +37,9 @@ client.on("clientReady", async () => {
       // featuresDir: path.join(__dirname, "features"),
       mongoUri: "",
       botOwners: [],
-      // Disable prefix commands so @mention only triggers the NLP handler
-      defaultPrefix: "!!",
     });
 
-    console.log("Bot is ready to use!");
+    console.log("Bot is ready to use [test]!");
   } catch (error) {
     console.error("Error:", error);
   }

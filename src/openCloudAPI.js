@@ -281,11 +281,14 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
     const response = await axios.get(url.toString(), {
       headers: getApiHeaders(universeId),
     });
-    
+
+    console.log(`[DEBUG] ListOrderedDataStoreEntries response keys:`, Object.keys(response.data));
+    console.log(`[DEBUG] ListOrderedDataStoreEntries raw data:`, JSON.stringify(response.data).slice(0, 500));
+
     // Check different possible response structures
     const entries = response.data.orderedDataStoreEntries || response.data.dataStoreEntries || response.data.entries || [];
     const nextPageToken = response.data.nextPageToken || null;
-    
+
     return createSuccessResponse({ entries: Array.isArray(entries) ? entries : [], nextPageToken });
   } catch (error) {
     console.error(`Error listing ordered datastore entries:`, error);
