@@ -7,7 +7,7 @@
 let _key = null;
 
 module.exports = {
-  getLlmKey: () => _key,
+  getLlmKey: () => _key || process.env.ANTHROPIC_API_KEY || null,
   setLlmKey: (key) => { _key = key; },
-  hasLlmKey: () => _key !== null,
+  hasLlmKey: () => _key !== null || !!process.env.ANTHROPIC_API_KEY,
 };

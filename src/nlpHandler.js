@@ -3,6 +3,10 @@
  * Fires on messageCreate events. When the bot is @mentioned and the message
  * looks like a Roblox admin command, it calls Claude (Anthropic) to parse the
  * intent and presents a confirmation before executing.
+ *
+ * Visibility rules:
+ *   - Confirmation / error replies are auto-deleted after the user acts or they expire.
+ *   - Execution results are posted publicly and remain in the channel.
  */
 
 const {
@@ -24,7 +28,29 @@ const COMMAND_KEYWORDS = [
   "show", "data", "datastore",
   "leaderboard", "list",
   "universe", "user", "player", "entry",
+  // Context-aware keywords (allow follow-up commands)
+  "previous", "last", "same", "again", "undo",
 ];
+
+// ── Per-channel command history (last N commands) ─────────────────────────
+const MAX_HISTORY = 5;
+const commandHistory = new Map(); // channelId → [{ action, parameters, timestamp }]
+
+function pushHistory(channelId, action, parameters) {
+  if (!commandHistory.has(channelId)) commandHistory.set(channelId, []);
+  const history = commandHistory.get(channelId);
+  history.push({ action, parameters, timestamp: new Date().toISOString() });
+  if (history.length > MAX_HISTORY) history.shift();
+}
+
+function getHistory(channelId) {
+  return commandHistory.get(channelId) || [];
+}
+
+/** Silently delete a message (best-effort). */
+function tryDelete(msg) {
+  msg.delete().catch(() => {});
+}
 
 /**
  * Main entry point — call from client.on('messageCreate', ...)
@@ -45,21 +71,24 @@ async function handleMessage(client, message) {
 
   // ── Permission & setup checks ────────────────────────────────────────────
   if (!message.member?.permissions.has("Administrator")) {
-    await message.reply({ content: "❌ Administrator permission required." });
+    const reply = await message.reply({ content: "❌ Administrator permission required." });
+    setTimeout(() => { tryDelete(reply); }, 5000);
     return;
   }
 
   if (!llmCache.hasLlmKey()) {
-    await message.reply({
+    const reply = await message.reply({
       content: "❌ No LLM API key configured. An administrator must run `/setllmkey` first.",
     });
+    setTimeout(() => { tryDelete(reply); }, 5000);
     return;
   }
 
   if (!textRaw) {
-    await message.reply({
+    const reply = await message.reply({
       content: "How can I help? Try something like: `ban user 12345 for cheating in MyGame`",
     });
+    setTimeout(() => { tryDelete(reply); }, 10000);
     return;
   }
 
@@ -67,29 +96,34 @@ async function handleMessage(client, message) {
   let parsed;
   try {
     const knownUniverses = apiCache.getCachedUniverses();
-    parsed = await processCommand(textRaw, knownUniverses);
+    const history = getHistory(message.channel.id);
+    parsed = await processCommand(textRaw, knownUniverses, history);
   } catch (err) {
     console.error("[NLP] Unexpected error calling processCommand:", err);
-    await message.reply({ content: "❌ Failed to process your request. Please try again." });
+    const reply = await message.reply({ content: "❌ Failed to process your request. Please try again." });
+    setTimeout(() => { tryDelete(reply); }, 5000);
     return;
   }
 
   // ── Handle LLM response ───────────────────────────────────────────────────
   if (!parsed.action) {
-    await message.reply({ content: parsed.confirmation_summary || "I couldn't understand that as a command." });
+    const reply = await message.reply({ content: parsed.confirmation_summary || "I couldn't understand that as a command." });
+    setTimeout(() => { tryDelete(reply); }, 10000);
     return;
   }
 
   if (parsed.missing.length > 0) {
-    await message.reply({
+    const reply = await message.reply({
       content: `I need more information to proceed. Missing: **${parsed.missing.join(", ")}**`,
     });
+    setTimeout(() => { tryDelete(reply); }, 10000);
     return;
   }
 
   const { universeId } = parsed.parameters;
   if (universeId && !apiCache.hasApiKey(universeId)) {
-    await message.reply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
+    const reply = await message.reply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
+    setTimeout(() => { tryDelete(reply); }, 10000);
     return;
   }
 
@@ -111,11 +145,11 @@ async function handleMessage(client, message) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("nlp_confirm")
-      .setLabel("✅ Confirm")
+      .setLabel("Confirm")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId("nlp_cancel")
-      .setLabel("❌ Cancel")
+      .setLabel("Cancel")
       .setStyle(ButtonStyle.Danger)
   );
 
@@ -133,7 +167,7 @@ async function handleMessage(client, message) {
     collector.stop("handled");
 
     if (i.customId === "nlp_cancel") {
-      await i.update({ content: "Cancelled.", embeds: [], components: [] });
+      tryDelete(reply);
       return;
     }
 
@@ -141,12 +175,18 @@ async function handleMessage(client, message) {
     await i.update({ content: "Executing…", embeds: [], components: [] });
 
     const resultEmbed = await executeAction(parsed.action, parsed.parameters);
-    await i.editReply({ content: "", embeds: [resultEmbed], components: [] });
+
+    // Save to history for context in future commands
+    pushHistory(message.channel.id, parsed.action, parsed.parameters);
+
+    // Post result publicly in the channel, then delete the confirmation
+    await message.channel.send({ embeds: [resultEmbed] });
+    tryDelete(reply);
   });
 
   collector.on("end", (_, reason) => {
     if (reason === "time") {
-      reply.edit({ content: "Request timed out.", embeds: [], components: [] }).catch(() => {});
+      tryDelete(reply);
     }
   });
 }

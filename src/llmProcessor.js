@@ -19,13 +19,21 @@ const FALLBACK = {
  *
  * @param {string} text - The user's message (mention already stripped)
  * @param {{ id: number, name: string }[]} knownUniverses - Cached universe name→ID mappings
+ * @param {{ action: string, parameters: object, timestamp: string }[]} history - Recent commands in this channel
  * @returns {Promise<{ action: string|null, parameters: object, missing: string[], confirmation_summary: string }>}
  */
-async function processCommand(text, knownUniverses = []) {
+async function processCommand(text, knownUniverses = [], history = []) {
   const universeContext =
     knownUniverses.length > 0
       ? `Known universes (resolve game names to IDs using this list):\n` +
         knownUniverses.map(u => `- "${u.name}" → ${u.id}`).join("\n")
+      : "";
+
+  const historyContext =
+    history.length > 0
+      ? `\nRecent commands executed in this channel (most recent last):\n` +
+        history.map((h, i) => `${i + 1}. ${h.action} — ${JSON.stringify(h.parameters)}`).join("\n") +
+        `\n\nUse this history to resolve references like "the previous user", "same universe", "undo that", "ban them again", etc. Carry forward parameters from recent commands when the user references them implicitly.`
       : "";
 
   const systemPrompt = `You are a command parser for a Roblox admin Discord bot. Parse the user's intent and return ONLY valid JSON — no prose, no markdown code fences, no explanation.
@@ -38,6 +46,7 @@ Available actions and their parameters:
 - removeFromBoard → required: userId(number), leaderboardName(string), universeId(number)  |  optional: key(string, defaults to userId as string)
 
 ${universeContext}
+${historyContext}
 
 Output schema — return ONLY this JSON object, nothing else:
 {
