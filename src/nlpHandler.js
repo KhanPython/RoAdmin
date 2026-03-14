@@ -79,6 +79,7 @@ async function handleMessage(client, message) {
   // ── Fast ignore conditions (zero cost) ──────────────────────────────────
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
+  console.log(`[NLP] handleMessage called for msgId=${message.id} at ${Date.now()} pid=${process.pid}`);
 
   const textRaw = message.content.replace(/<@!?\d+>/g, "").trim();
   const textLower = textRaw.toLowerCase();
