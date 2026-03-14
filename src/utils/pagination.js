@@ -94,7 +94,7 @@ async function sendPaginatedList({
   const initial = await buildPage();
   const msg = await sendInitial({ embeds: [initial.embed], components: initial.components });
 
-  // Nothing to paginate, or first fetch failed — no collector needed
+  // Nothing to paginate, or first fetch failed - no collector needed
   if (!initial.ok || initial.components.length === 0) return;
 
   const doEdit = editFn ?? ((opts) => msg.edit(opts));

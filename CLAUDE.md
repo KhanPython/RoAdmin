@@ -1,4 +1,4 @@
-# CLAUDE.md — RoAdmin Developer Guide
+# CLAUDE.md - RoAdmin Developer Guide
 
 This file provides context for AI assistants working on the RoAdmin codebase.
 
@@ -95,7 +95,7 @@ Stay pragmatic. Stay reliable. Keep learning.
 ```
 RoAdmin/
 ├── src/
-│   ├── index.js              # Bot entry point — initializes discord.js client and WOKCommands
+│   ├── index.js              # Bot entry point - initializes discord.js client and WOKCommands
 │   ├── openCloudAPI.js       # Core Roblox Open Cloud API wrapper (ban, datastore, messaging)
 │   ├── robloxUserInfo.js     # Fetches Roblox user info via public API (username, avatar)
 │   ├── robloxMessageAPI.js   # Roblox Messaging Service integration
@@ -139,7 +139,7 @@ RoAdmin/
 # Install all dependencies
 npm install
 
-# Create a .env file (not committed — see .gitignore)
+# Create a .env file (not committed - see .gitignore)
 echo "DISCORD_TOKEN=your-token-here" > .env
 
 # Start the bot
@@ -202,7 +202,7 @@ All exported functions return a standardized response object:
 { success: boolean, status: number, data: any }
 ```
 
-Callers must check `result.success` before using `result.data`. HTTP errors are caught and returned as `{ success: false, status: <code>, data: errorMessage }` — they are never thrown.
+Callers must check `result.success` before using `result.data`. HTTP errors are caught and returned as `{ success: false, status: <code>, data: errorMessage }` - they are never thrown.
 
 ### In-Memory API Key Cache (`src/utils/apiCache.js`)
 
@@ -266,9 +266,9 @@ Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCO
 
 ## What to Avoid
 
-- Do not persist API keys to disk or logs — they live only in memory.
+- Do not persist API keys to disk or logs - they live only in memory.
 - Do not skip `deferReply` before async operations; Discord invalidates interactions after 3 seconds.
 - Do not use `reply` after `deferReply`; use `editReply` instead.
-- Do not add a database dependency — the design intentionally uses Roblox DataStores as the sole persistence layer.
+- Do not add a database dependency - the design intentionally uses Roblox DataStores as the sole persistence layer.
 - Do not push to `master` when working on a feature; use a feature branch.
-- Do not expose raw error objects in Discord messages — format them into readable embed fields.
+- Do not expose raw error objects in Discord messages - format them into readable embed fields.

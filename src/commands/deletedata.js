@@ -1,4 +1,4 @@
-const { ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { ApplicationCommandOptionType, MessageFlags, AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
@@ -70,19 +70,83 @@ module.exports = {
       }
       const universeInfo = universeCheck.universeInfo;
 
-      // Snapshot current value before deleting so it can be shown in the result
-      const snapshot = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
-      const snapshotText = snapshot.success && snapshot.data !== null
-        ? JSON.stringify(snapshot.data, null, 2).slice(0, 900)
-        : "Could not retrieve value before deletion.";
+      // ── Warning confirmation step ──────────────────────────────────────
+      const warningEmbed = new EmbedBuilder()
+        .setTitle("⚠️ Confirm Data Deletion")
+        .setDescription(
+          "**This action is irreversible.** The datastore entry will be permanently deleted from Roblox and cannot be recovered."
+        )
+        .addFields(
+          { name: "Key", value: key, inline: true },
+          { name: "Datastore", value: datastoreName, inline: true },
+          { name: "Universe", value: String(universeId), inline: true },
+          { name: "Scope", value: scope, inline: true },
+        )
+        .setColor(0xff0000)
+        .setFooter({ text: "This confirmation expires in 30 seconds" })
+        .setTimestamp();
 
-      const result = await openCloud.DeleteDataStoreEntry(key, universeId, datastoreName, scope);
+      if (universeInfo?.icon) warningEmbed.setThumbnail(universeInfo.icon);
 
-      if (result.success) {
-        pushHistory(interaction.channelId, interaction.user.id, "deleteData", { key, universeId, datastoreName, scope });
-      }
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("deletedata_confirm")
+          .setLabel("Delete Permanently")
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId("deletedata_cancel")
+          .setLabel("Cancel")
+          .setStyle(ButtonStyle.Secondary),
+      );
 
-      await interaction.editReply({ embeds: [buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope, snapshotText }, universeInfo)] });
+      await interaction.editReply({ embeds: [warningEmbed], components: [row] });
+
+      const reply = await interaction.fetchReply();
+      const collector = reply.createMessageComponentCollector({ time: 30_000 });
+
+      collector.on("collect", async (i) => {
+        if (i.user.id !== interaction.user.id) {
+          await i.reply({ content: "Only the person who ran this command can confirm it.", ephemeral: true });
+          return;
+        }
+
+        collector.stop("handled");
+
+        if (i.customId === "deletedata_cancel") {
+          await i.update({ content: "Deletion cancelled.", embeds: [], components: [] });
+          return;
+        }
+
+        // ── Confirmed - proceed with deletion ─────────────────────────────
+        await i.update({ content: "Deleting…", embeds: [], components: [] });
+
+        // Snapshot current value before deleting so it can be attached as a file
+        const snapshot = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
+        const hasSnapshot = snapshot.success && snapshot.data !== null;
+
+        const result = await openCloud.DeleteDataStoreEntry(key, universeId, datastoreName, scope);
+
+        if (result.success) {
+          pushHistory(interaction.channelId, interaction.user.id, "deleteData", { key, universeId, datastoreName, scope });
+        }
+
+        const embed = buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope }, universeInfo);
+
+        if (hasSnapshot) {
+          const jsonString = JSON.stringify(snapshot.data, null, 2);
+          const fileBuffer = Buffer.from(jsonString, 'utf-8');
+          const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_deleted_snapshot.txt` });
+          await interaction.editReply({ content: null, embeds: [embed], files: [attachment] });
+        } else {
+          await interaction.editReply({ content: null, embeds: [embed] });
+        }
+      });
+
+      collector.on("end", (_, reason) => {
+        if (reason === "time") {
+          interaction.editReply({ content: "Deletion timed out - no action taken.", embeds: [], components: [] }).catch(() => {});
+        }
+      });
     } catch (error) {
       console.error("Error in deletedata command:", error);
       await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });

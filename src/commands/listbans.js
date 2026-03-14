@@ -55,7 +55,7 @@ module.exports = {
 
       await sendPaginatedList({
         authorId: user.id,
-        title: `Active Bans — ${universeInfo.name}`,
+        title: `Active Bans - ${universeInfo.name}`,
         iconUrl: universeInfo.icon ?? null,
         fetchPage: (pt) => openCloud.ListBans(universeId, pt),
         formatEntries: formatBanEntries,

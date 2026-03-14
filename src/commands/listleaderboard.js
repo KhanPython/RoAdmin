@@ -71,7 +71,7 @@ module.exports = {
 
       await sendPaginatedList({
         authorId: user.id,
-        title: `Leaderboard — ${leaderboardName}`,
+        title: `Leaderboard - ${leaderboardName}`,
         iconUrl: universeInfo.icon ?? null,
         fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(leaderboardName, scopeId, pt, universeId),
         formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId, scope: scopeId, universeName: universeInfo.name, entriesPerPage: ENTRIES_PER_PAGE }),

@@ -73,7 +73,7 @@ module.exports = {
 
       await sendPaginatedList({
         authorId: user.id,
-        title: `Keys — ${datastoreName}`,
+        title: `Keys - ${datastoreName}`,
         iconUrl: universeInfo.icon ?? null,
         fetchPage: (pt) => openCloud.ListDataStoreKeys(universeId, datastoreName, scope, pt),
         formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId, scope }),

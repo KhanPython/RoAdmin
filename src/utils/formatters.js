@@ -120,7 +120,7 @@ function formatBanEntries(data, page) {
       const expDt = new Date(new Date(r.startTime).getTime() + parseInt(r.duration, 10) * 1000);
       expires = expDt.toLocaleDateString();
     }
-    return `**${offset + i + 1}.** \`${uid}\` — ${reason}\n> Expires: ${expires}`;
+    return `**${offset + i + 1}.** \`${uid}\` - ${reason}\n> Expires: ${expires}`;
   }).join("\n\n");
 }
 
@@ -146,6 +146,7 @@ function buildShowDataEmbed(result, { key, universeId, datastoreName }, universe
 
   if (result.success) {
     fields.push({ name: "Data Size", value: `${JSON.stringify(result.data ?? "", null, 2).length} bytes`, inline: true });
+    fields.push({ name: "Value", value: formatJsonValue(result.data), inline: false });
   }
 
   return buildResultEmbed(
@@ -179,9 +180,34 @@ function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, s
   );
 }
 
+// ─── Update Data (field-level patch) ────────────────────────────────────────
+
+function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, oldValue, newValue, summary, scope }, universeInfo) {
+  const fields = result.success
+    ? [
+        { name: "Key", value: key, inline: true },
+        { name: "Universe ID", value: String(universeId), inline: true },
+        { name: "Datastore", value: datastoreName, inline: true },
+        { name: "Scope", value: scope || "global", inline: true },
+        { name: "Field", value: String(field), inline: true },
+        { name: "Old → New", value: `\`${formatJsonValue(String(oldValue ?? "undefined"))}\` → \`${formatJsonValue(String(newValue))}\``, inline: false },
+        { name: "Summary", value: summary, inline: false },
+      ]
+    : [];
+
+  return buildResultEmbed(
+    "Update Datastore Field",
+    result,
+    fields,
+    result.success ? "Field successfully updated" : result.status,
+    universeInfo?.icon ?? null,
+    universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
+  );
+}
+
 // ─── Delete Data ────────────────────────────────────────────────────────────
 
-function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope, snapshotText }, universeInfo) {
+function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope }, universeInfo) {
   return buildResultEmbed(
     "Delete Datastore Entry",
     result,
@@ -191,7 +217,6 @@ function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope, s
           { name: "Universe ID", value: String(universeId), inline: true },
           { name: "Datastore", value: datastoreName, inline: true },
           { name: "Scope", value: scope || "global", inline: true },
-          { name: "Deleted Value (snapshot)", value: `\`\`\`json\n${snapshotText}\n\`\`\``, inline: false },
         ]
       : [],
     result.success ? "Entry permanently deleted" : result.status,
@@ -205,7 +230,7 @@ function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope, s
 function formatLeaderboardEntries(data, pageNum, { universeId, scope, universeName, entriesPerPage = 10 }) {
   const offset = (pageNum - 1) * entriesPerPage;
   const lines = (data.entries || [])
-    .map((e, i) => `${offset + i + 1}. **${e.id}** — ${e.value}`)
+    .map((e, i) => `${offset + i + 1}. **${e.id}** - ${e.value}`)
     .join("\n");
   const header = universeName
     ? `**Experience:** ${universeName} | Universe: \`${universeId}\` | Scope: \`${scope}\``
@@ -250,6 +275,7 @@ module.exports = {
   formatJsonValue,
   buildShowDataEmbed,
   buildSetDataEmbed,
+  buildUpdateDataEmbed,
   buildDeleteDataEmbed,
   formatLeaderboardEntries,
   buildRemoveFromBoardEmbed,

@@ -395,7 +395,7 @@ exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreNa
  * @param {boolean} excludeAltAccounts - Whether to ban alternate accounts (default: false)
  * @returns {Promise<{success: boolean, status: string, expiresDate: Date|null}>}
  */
-exports.BanUser = async function (userId, reason, duration, excludeAltAccounts = false, universeId = null) {
+exports.BanUser = async function (userId, reason, duration, excludeAltAccounts = false, universeId = null, discordUserId = null) {
   try {
     if (!universeId) {
       throw new Error("Universe ID is required");
@@ -410,10 +410,14 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
       durationString = `${durationSeconds}s`;
     }
 
+    const privateReason = discordUserId
+      ? `${reason} | Banned by Discord user ${discordUserId}`
+      : reason;
+
     const payload = {
       gameJoinRestriction: {
         active: true,
-        privateReason: reason,
+        privateReason,
         displayReason: reason,
         excludeAltAccounts: excludeAltAccounts || false,
       }
@@ -579,7 +583,7 @@ exports.SetDataStoreEntry = async function (key, value, universeId, datastoreNam
       if (response.status === 200 || response.status === 201) return createSuccessResponse();
     } catch (patchErr) {
       if (patchErr.response?.status !== 404) throw patchErr;
-      // Key doesn't exist yet — create it
+      // Key doesn't exist yet - create it
       const createUrl = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries`);
       createUrl.searchParams.set("id", key);
       const postResponse = await axios.post(createUrl.toString(), { value }, { headers: getApiHeaders(universeId) });

@@ -32,11 +32,11 @@ async function processCommand(text, knownUniverses = [], history = []) {
   const historyContext =
     history.length > 0
       ? `\nRecent commands executed in this channel (most recent last):\n` +
-        history.map((h, i) => `${i + 1}. ${h.action} — ${JSON.stringify(h.parameters)}`).join("\n") +
+        history.map((h, i) => `${i + 1}. ${h.action} - ${JSON.stringify(h.parameters)}`).join("\n") +
         `\n\nUse this history to resolve references like "the previous user", "same universe", "undo that", "ban them again", etc. Carry forward parameters from recent commands when the user references them implicitly.`
       : "";
 
-  const systemPrompt = `You are a command parser for a Roblox admin Discord bot. Parse the user's intent and return ONLY valid JSON — no prose, no markdown code fences, no explanation.
+  const systemPrompt = `You are a command parser for a Roblox admin Discord bot. Parse the user's intent and return ONLY valid JSON - no prose, no markdown code fences, no explanation.
 
 Available actions and their parameters:
 - ban            → required: userId(number), reason(string), universeId(number)  |  optional: duration(string e.g. "7d","2m","1y"), excludeAlts(boolean, default false)
@@ -45,17 +45,19 @@ Available actions and their parameters:
 - listBans       → required: universeId(number)
 - showData       → required: key(string), universeId(number), datastoreName(string)
 - setData        → required: key(string), value(string), universeId(number), datastoreName(string)  |  optional: scope(string, default "global")
-- deleteData     → required: key(string), universeId(number), datastoreName(string)  |  optional: scope(string, default "global")  |  NOTE: key is the specific entry key (e.g. a player's userId as string like "12345"), NOT the datastore name itself. Warn the user in confirmation_summary if the key looks like a generic name rather than a player ID.
+- updateData     → required: key(string), universeId(number), datastoreName(string), field(string), newValue(string)  |  optional: scope(string, default "global")  |  NOTE: use updateData when the user wants to change a SPECIFIC field/property inside a datastore entry (e.g. "set their money to 500", "change level to 10"). The field is the property name (e.g. "money"), newValue is the desired value (e.g. "500"). Use setData only when the user wants to replace the ENTIRE entry value.
 - listKeys       → required: universeId(number), datastoreName(string)  |  optional: scope(string, default "global")
+
+IMPORTANT: deleteData is NOT available through natural language. If the user asks to delete datastore entries, set action to null and set confirmation_summary to "Data deletion must be done explicitly via the /deletedata slash command for safety."
 - listLeaderboard → required: leaderboardName(string), universeId(number)  |  optional: scope(string, default "global")
 - removeFromBoard → required: userId(number), leaderboardName(string), universeId(number)  |  optional: key(string, defaults to userId as string)
 
 ${universeContext}
 ${historyContext}
 
-BATCH COMMANDS: When the user wants to perform the same action on multiple targets (e.g. "ban 123 and 456", "ban users from this table: {123, 456, 789}", "unban all of these: 1, 2, 3"), return a JSON ARRAY of command objects — one per target. Each object must be fully self-contained with all parameters. Shared parameters (universeId, reason, etc.) should be copied into every object.
+BATCH COMMANDS: When the user wants to perform the same action on multiple targets (e.g. "ban 123 and 456", "ban users from this table: {123, 456, 789}", "unban all of these: 1, 2, 3"), return a JSON ARRAY of command objects - one per target. Each object must be fully self-contained with all parameters. Shared parameters (universeId, reason, etc.) should be copied into every object.
 
-Output schema — return ONLY this JSON, nothing else:
+Output schema - return ONLY this JSON, nothing else:
 
 For a SINGLE command:
 [{
@@ -105,4 +107,52 @@ ALWAYS return an array, even for a single command.`;
   }
 }
 
-module.exports = { processCommand };
+/**
+ * Given the current JSON value of a datastore entry and a natural language
+ * description of what to change, return a patched copy of the object with
+ * only the requested field(s) modified.
+ *
+ * @param {object} currentValue - The current datastore value (parsed JSON)
+ * @param {string} instruction  - The user's change request (e.g. "set money to 500")
+ * @returns {Promise<{ patched: object|null, summary: string }>}
+ */
+async function patchDatastoreValue(currentValue, instruction) {
+  const systemPrompt = `You are a precise JSON editor. You will receive a JSON object and a natural language instruction describing which field(s) to change and to what value(s).
+
+Return ONLY a valid JSON object with two keys:
+- "patched": the full JSON object with ONLY the requested field(s) changed. All other fields must remain exactly as-is. Preserve types (numbers stay numbers, booleans stay booleans, etc.).
+- "summary": a concise one-line description of what was changed (e.g. "Changed money from 100 to 500").
+
+If the requested field does not exist in the object, add it and note that in the summary.
+If the instruction is ambiguous or cannot be applied, return { "patched": null, "summary": "<explanation of why>" }.
+
+Do NOT wrap in markdown code fences. Return ONLY the JSON.`;
+
+  try {
+    const client = new Anthropic.default({ apiKey: llmCache.getLlmKey() });
+
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{
+        role: "user",
+        content: `Current value:\n${JSON.stringify(currentValue, null, 2)}\n\nInstruction: ${instruction}`,
+      }],
+    });
+
+    const raw = response.content[0]?.text?.trim() ?? "";
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      patched: parsed.patched ?? null,
+      summary: parsed.summary ?? "No summary provided.",
+    };
+  } catch (err) {
+    console.error("[NLP] patchDatastoreValue error:", err.message);
+    return { patched: null, summary: "Failed to process the update. Please try again." };
+  }
+}
+
+module.exports = { processCommand, patchDatastoreValue };

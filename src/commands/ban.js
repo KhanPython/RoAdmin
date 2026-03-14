@@ -98,7 +98,7 @@ module.exports = {
       const universeInfo = universeCheck.universeInfo;
       
       // Call Open Cloud Ban function
-      const response = await openCloud.BanUser(userId, reason, duration, excludeAltAccounts, universeId);
+      const response = await openCloud.BanUser(userId, reason, duration, excludeAltAccounts, universeId, interaction.user.id);
 
       if (response.success) {
         pushHistory(interaction.channelId, interaction.user.id, "ban", { userId, reason, duration, excludeAltAccounts, universeId });

@@ -102,24 +102,12 @@ module.exports = {
       // Build metadata embed from shared formatter
       const infoEmbed = buildShowDataEmbed(playerDataResult, { key, universeId, datastoreName }, universeInfo);
 
-      // Format as code block for second embed / file
+      // Always attach full data as a .txt file
       const jsonString = JSON.stringify(playerDataResult.data, null, 2);
-      const codeBlock = `\`\`\`json\n${jsonString}\n\`\`\``;
+      const fileBuffer = Buffer.from(jsonString, 'utf-8');
+      const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.txt` });
 
-      if (codeBlock.length <= 4096) {
-        const dataEmbed = new EmbedBuilder()
-          .setColor(0x2B2D31)
-          .setDescription(codeBlock);
-
-        await interaction.editReply({ embeds: [infoEmbed, dataEmbed] });
-      } else {
-        const fileBuffer = Buffer.from(jsonString, 'utf-8');
-        const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.json` });
-
-        infoEmbed.addFields({ name: "Data", value: "Data is too large to display inline. See attached JSON file.", inline: false });
-
-        await interaction.editReply({ embeds: [infoEmbed], files: [attachment] });
-      }
+      await interaction.editReply({ embeds: [infoEmbed], files: [attachment] });
       
       return;
     } catch (error) {

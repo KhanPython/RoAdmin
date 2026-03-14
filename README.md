@@ -13,18 +13,18 @@
     </p>
 </div>
 
-### A Discord bot for managing Roblox experiences via Roblox Open Cloud APIs — with both slash commands and natural language input powered by Claude (Anthropic).
+### A Discord bot for managing Roblox experiences via Roblox Open Cloud APIs - with both slash commands and natural language input powered by Claude (Anthropic).
 
 ---
 
 ## Features
 
-- **Moderation** — Ban and unban players, check ban status, list active bans
-- **DataStore Management** — Read, write, list keys, and delete standard datastore entries
-- **Leaderboards** — View and remove entries from ordered datastores
-- **Natural Language Interface** — @mention the bot with plain English commands; Claude parses intent and presents a confirmation before executing
-- **Multi-universe Support** — Manage multiple Roblox experiences from one bot instance, each with its own API key
-- **Security** — All commands require Administrator permission; NLP commands include a confirmation step, prompt-injection defence, and batch write protection
+- **Moderation** - Ban and unban players, check ban status, list active bans
+- **DataStore Management** - Read, write, list keys, and delete standard datastore entries
+- **Leaderboards** - View and remove entries from ordered datastores
+- **Natural Language Interface** - @mention the bot with plain English commands; Claude parses intent and presents a confirmation before executing
+- **Multi-universe Support** - Manage multiple Roblox experiences from one bot instance, each with its own API key
+- **Security** - All commands require Administrator permission; NLP commands include a confirmation step, prompt-injection defence, and batch write protection
 
 ---
 
@@ -86,6 +86,8 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 | Command | Parameters | Description |
 |---------|-----------|-------------|
 | `/showData` | `key`, `universeid`, `datastore` | Read a single standard datastore entry by key |
+| `/setdata` | `key`, `universeid`, `datastore`, `value`, `scope`\* | Set or update a datastore entry (upsert). Value can be JSON or a plain string. |
+| `/deletedata` | `key`, `universeid`, `datastore`, `scope`\* | Delete a datastore entry. Requires button confirmation; attaches a snapshot of the deleted value as a file. |
 
 ### Leaderboards
 
@@ -125,31 +127,30 @@ The bot replies with a confirmation embed showing the parsed parameters. Click *
 @RoAdmin list all active bans in universe 111222333
 ```
 
-#### DataStore — Reading
+#### DataStore - Reading
 
 ```
 @RoAdmin show data for key 12345678 in datastore PlayerCoins universe 111222333
 @RoAdmin get entry 87654321 from PlayerStats datastore in universe 111222333
 ```
 
-#### DataStore — Writing
+#### DataStore - Writing
 
 ```
 @RoAdmin set PlayerCoins for key 12345678 to 500 in universe 111222333
 @RoAdmin update PlayerStats for player 87654321 to {"coins":100,"level":5} in universe 111222333
 ```
 
-> `setData` creates entries that don't exist yet (upsert behaviour).
+> `setData` creates entries that don't exist yet (upsert behaviour). The value can be JSON or a plain string.
 
-#### DataStore — Keys & Deletion
+#### DataStore - Keys
 
 ```
 @RoAdmin list all keys in PlayerCoins datastore in universe 111222333
 @RoAdmin list keys in PlayerStats in universe 111222333
-@RoAdmin delete key 12345678 from PlayerCoins datastore in universe 111222333
 ```
 
-> Deleting an entry first retrieves and displays the current value in the result embed so you can restore it with `setData` if needed. `setData` and `deleteData` cannot be batched — they must be run one at a time.
+> **Deletion is not available via NLP.** Use the `/deletedata` slash command instead — it requires a confirmation button click and attaches a snapshot of the deleted value. `setData` and `updateData` cannot be batched via NLP — they must be run one at a time.
 
 #### Leaderboards (Ordered DataStores)
 

@@ -19,7 +19,7 @@ const {
 const openCloud = require("./openCloudAPI");
 const apiCache = require("./utils/apiCache");
 const llmCache = require("./utils/llmCache");
-const { processCommand } = require("./llmProcessor");
+const { processCommand, patchDatastoreValue } = require("./llmProcessor");
 const { sendPaginatedList } = require("./utils/pagination");
 const {
   buildResultEmbed,
@@ -30,7 +30,7 @@ const {
   buildShowDataEmbed,
   formatJsonValue,
   buildSetDataEmbed,
-  buildDeleteDataEmbed,
+  buildUpdateDataEmbed,
   formatLeaderboardEntries,
   buildRemoveFromBoardEmbed,
   formatKeyEntries,
@@ -45,13 +45,13 @@ const COMMAND_KEYWORDS = [
   "leaderboard", "list",
   "universe", "user", "player", "entry",
   "check", "status", "banned", "bans",
-  "set", "delete", "wipe", "keys",
+  "set", "keys", "update", "change", "modify",
   // Context-aware keywords (allow follow-up commands)
   "previous", "last", "same", "again", "undo",
 ];
 
 // ── Per-user-per-channel command history (last N commands) ───────────────
-const MAX_HISTORY = 5;
+const MAX_HISTORY = 20;
 const commandHistory = new Map(); // `${channelId}:${userId}` → [{ action, parameters, timestamp }]
 
 function pushHistory(channelId, userId, action, parameters) {
@@ -74,7 +74,7 @@ const COOLDOWN_MS = 3_000;
 const lastCommandTime = new Map(); // userId → timestamp
 
 // ── Safety constraints ────────────────────────────────────────────────────
-const ALLOWED_ACTIONS = new Set(["ban", "unban", "showData", "listLeaderboard", "removeFromBoard", "checkBan", "listBans", "setData", "listKeys", "deleteData"]);
+const ALLOWED_ACTIONS = new Set(["ban", "unban", "showData", "listLeaderboard", "removeFromBoard", "checkBan", "listBans", "setData", "updateData", "listKeys"]);
 const MAX_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 600; // ms between consecutive Roblox API calls in a batch
 
@@ -91,7 +91,7 @@ async function replyEmbed(message, title, description, color) {
 }
 
 /**
- * Main entry point — call from client.on('messageCreate', ...)
+ * Main entry point - call from client.on('messageCreate', ...)
  * @param {import('discord.js').Client} client
  * @param {import('discord.js').Message} message
  */
@@ -103,7 +103,7 @@ async function handleMessage(client, message) {
   const textRaw = message.content.replace(/<@!?\d+>/g, "").trim();
   const textLower = textRaw.toLowerCase();
 
-  // Keyword pre-filter — silently ignore non-command messages
+  // Keyword pre-filter - silently ignore non-command messages
   const looksLikeCommand = COMMAND_KEYWORDS.some(kw => textLower.includes(kw));
   if (!looksLikeCommand) return;
 
@@ -156,7 +156,7 @@ async function handleMessage(client, message) {
   // Reject any action not in the known whitelist
   const invalidAction = commands.find(cmd => !ALLOWED_ACTIONS.has(cmd.action));
   if (invalidAction) {
-    console.warn(`[NLP] Rejected unknown action "${invalidAction.action}" — possible prompt injection`);
+    console.warn(`[NLP] Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
     await replyEmbed(message, "Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
     return;
   }
@@ -167,10 +167,10 @@ async function handleMessage(client, message) {
     return;
   }
 
-  // Data-mutating actions (setData, deleteData) must not be batched
-  const DATA_MUTATING_ACTIONS = new Set(["setData", "deleteData"]);
+  // Data-mutating actions (setData, updateData) must not be batched
+  const DATA_MUTATING_ACTIONS = new Set(["setData", "updateData"]);
   if (commands.length > 1 && commands.some(cmd => DATA_MUTATING_ACTIONS.has(cmd.action))) {
-    await replyEmbed(message, "Cannot Batch Data Writes", "`setData` and `deleteData` commands must be executed one at a time.", 0xff0000);
+    await replyEmbed(message, "Cannot Batch Data Writes", "`setData` and `updateData` commands must be executed one at a time.", 0xff0000);
     return;
   }
 
@@ -262,7 +262,7 @@ async function handleMessage(client, message) {
       return;
     }
 
-    // Confirm — execute all commands
+    // Confirm - execute all commands
     try {
       await i.update({
         content: isBatch ? `Executing ${commands.length} commands…` : "Executing…",
@@ -282,7 +282,7 @@ async function handleMessage(client, message) {
         }
       }
 
-      // Discord allows up to 10 embeds per message — split if needed
+      // Discord allows up to 10 embeds per message - split if needed
       while (resultEmbeds.length > 0) {
         const batch = resultEmbeds.splice(0, 10);
         await message.channel.send({ embeds: batch });
@@ -333,7 +333,8 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.reason,
           params.duration || null,
           params.excludeAlts || false,
-          params.universeId
+          params.universeId,
+          authorId
         );
         return buildBanEmbed(result, {
           userId: params.userId,
@@ -354,13 +355,17 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.datastoreName
         );
         const showEmbed = buildShowDataEmbed(result, { key: params.key, universeId: params.universeId, datastoreName: params.datastoreName }, universeInfo);
-        // For NLP, also add the Value field inline (showData slash command uses a second embed)
         if (result.success && result.data !== null && result.data !== undefined) {
-          showEmbed.addFields({ name: "Value", value: formatJsonValue(result.data), inline: false });
-        } else if (result.success) {
+          const jsonString = JSON.stringify(result.data, null, 2);
+          const { AttachmentBuilder } = require("discord.js");
+          const fileBuffer = Buffer.from(jsonString, "utf-8");
+          const attachment = new AttachmentBuilder(fileBuffer, { name: `${params.key}_data.txt` });
+          await channel.send({ embeds: [showEmbed], files: [attachment] });
+        } else {
           showEmbed.addFields({ name: "Value", value: "No data found for this key.", inline: false });
+          await channel.send({ embeds: [showEmbed] });
         }
-        return showEmbed;
+        return null;
       }
 
       case "listLeaderboard": {
@@ -397,7 +402,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
       case "listBans":
         await sendPaginatedList({
           authorId,
-          title: `Active Bans — Universe ${params.universeId}`,
+          title: `Active Bans - Universe ${params.universeId}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListBans(params.universeId, pt),
           formatEntries: formatBanEntries,
@@ -424,37 +429,60 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
         }, universeInfo);
       }
 
+      case "updateData": {
+        // 1. Fetch the current value
+        const fetchResult = await openCloud.GetDataStoreEntry(
+          params.key,
+          params.universeId,
+          params.datastoreName
+        );
+        if (!fetchResult.success || fetchResult.data === null || fetchResult.data === undefined) {
+          return buildErrorEmbed(`Could not fetch current data for key \"${params.key}\" - ${fetchResult.status || "entry not found"}.`);
+        }
+
+        const currentValue = fetchResult.data;
+        if (typeof currentValue !== "object" || currentValue === null) {
+          return buildErrorEmbed(`The value for key \"${params.key}\" is not a JSON object (it's a ${typeof currentValue}). Use \`setData\` to replace it entirely.`);
+        }
+
+        // 2. Ask the LLM to patch the value
+        const instruction = `Set the field "${params.field}" to ${params.newValue}`;
+        const { patched, summary } = await patchDatastoreValue(currentValue, instruction);
+        if (!patched) {
+          return buildErrorEmbed(`Could not apply update: ${summary}`);
+        }
+
+        // 3. Write back the patched value
+        result = await openCloud.SetDataStoreEntry(
+          params.key,
+          patched,
+          params.universeId,
+          params.datastoreName,
+          params.scope || "global"
+        );
+
+        return buildUpdateDataEmbed(result, {
+          key: params.key,
+          universeId: params.universeId,
+          datastoreName: params.datastoreName,
+          field: params.field,
+          oldValue: currentValue[params.field],
+          newValue: params.newValue,
+          summary,
+          scope: params.scope || "global",
+        }, universeInfo);
+      }
+
       case "listKeys":
         await sendPaginatedList({
           authorId,
-          title: `Keys — ${params.datastoreName}`,
+          title: `Keys - ${params.datastoreName}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListDataStoreKeys(params.universeId, params.datastoreName, params.scope || "global", pt),
           formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global" }),
           sendInitial: (opts) => channel.send(opts),
         });
         return null;
-
-      case "deleteData": {
-        const snapshot = await openCloud.GetDataStoreEntry(params.key, params.universeId, params.datastoreName);
-        const snapshotText = snapshot.success && snapshot.data !== null
-          ? JSON.stringify(snapshot.data, null, 2).slice(0, 900)
-          : "Could not retrieve value before deletion.";
-
-        result = await openCloud.DeleteDataStoreEntry(
-          params.key,
-          params.universeId,
-          params.datastoreName,
-          params.scope || "global"
-        );
-        return buildDeleteDataEmbed(result, {
-          key: params.key,
-          universeId: params.universeId,
-          datastoreName: params.datastoreName,
-          scope: params.scope || "global",
-          snapshotText,
-        }, universeInfo);
-      }
 
       default:
         return buildErrorEmbed(`Action "${action}" is not recognised.`);
