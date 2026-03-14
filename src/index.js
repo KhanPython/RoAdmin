@@ -44,6 +44,9 @@ client.on("clientReady", async () => {
   }
 });
 
-client.on("messageCreate", (message) => handleMessage(client, message));
+client.on("messageCreate", (message) => {
+  console.log(`[DEBUG] messageCreate fired — author: ${message.author.tag}, content: "${message.content}", mentions bot: ${message.mentions.has(client.user)}`);
+  handleMessage(client, message);
+});
 
 client.login(discordToken);
