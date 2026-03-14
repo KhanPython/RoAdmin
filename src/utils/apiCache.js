@@ -6,6 +6,9 @@
 
 // In-memory cache: { universeId: apiKey }
 const apiKeyCache = {};
+
+// In-memory universe name cache: { universeId: universeName }
+const universeNameCache = {};
 const { MessageFlags } = require("discord.js");
 
 /**
@@ -115,6 +118,26 @@ function createMissingApiKeyEmbed(universeId) {
     .setTimestamp();
 }
 
+/**
+ * Cache the display name for a universe (called when /setapikey succeeds)
+ * @param {number} universeId
+ * @param {string} name
+ */
+function setUniverseName(universeId, name) {
+  if (name) universeNameCache[universeId] = name;
+}
+
+/**
+ * Return all universes that have both an API key and a cached name.
+ * Used to inject known game names into the NLP system prompt.
+ * @returns {{ id: number, name: string }[]}
+ */
+function getCachedUniverses() {
+  return Object.keys(apiKeyCache)
+    .filter(id => universeNameCache[id])
+    .map(id => ({ id: Number(id), name: universeNameCache[id] }));
+}
+
 module.exports = {
   getApiKey,
   setApiKey,
@@ -124,4 +147,6 @@ module.exports = {
   clearAllApiKeys,
   getCachedUniverseIds,
   createMissingApiKeyEmbed,
+  setUniverseName,
+  getCachedUniverses,
 };
