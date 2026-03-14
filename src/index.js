@@ -36,6 +36,9 @@ client.on("clientReady", async () => {
       commandsDir: path.join(__dirname, "commands"),
       // featuresDir: path.join(__dirname, "features"),
       mongoUri: "",
+      botOwners: [],
+      // Disable prefix commands so @mention only triggers the NLP handler
+      defaultPrefix: "!!",
     });
 
     console.log("Bot is ready to use!");
@@ -44,9 +47,6 @@ client.on("clientReady", async () => {
   }
 });
 
-client.on("messageCreate", (message) => {
-  console.log(`[DEBUG] messageCreate fired — author: ${message.author.tag}, content: "${message.content}", mentions bot: ${message.mentions.has(client.user)}`);
-  handleMessage(client, message);
-});
+client.on("messageCreate", (message) => handleMessage(client, message));
 
 client.login(discordToken);
