@@ -11,6 +11,8 @@ module.exports = {
       max_restarts: 5,
       time: true,
       merge_logs: true,
+      out_file: "logs/RoAdmin-out.log",
+      error_file: "logs/RoAdmin-error.log",
       env: {
         NODE_ENV: "production",
       },
