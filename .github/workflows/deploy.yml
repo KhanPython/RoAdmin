@@ -16,24 +16,30 @@ jobs:
           username: ${{ secrets.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # 1. Load shell paths
+            # 1. Setup Environment
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
             source ~/.bashrc || source ~/.profile
 
-            # 2. Sync Code
-            cd ~/RoAdmin
-            /usr/bin/git fetch --all
-            /usr/bin/git reset --hard origin/master
-            /usr/bin/git clean -fd
+            # Explicitly define paths again inside the shell to be 100% sure
+            PM2="/usr/local/bin/pm2"
+            GIT="/usr/bin/git"
+            NPM="/usr/bin/npm"
 
-            # 3. Create .env in root
+            # 2. Sync Code
+            cd /home/orazimbetov_jalaladdin1/RoAdmin || exit 1
+            $GIT fetch --all
+            $GIT reset --hard origin/master
+            $GIT clean -fd
+
+            # 3. Create .env
             echo "DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\"" > .env
             echo "ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
             echo "NODE_ENV=\"production\"" >> .env
 
             # 4. Install
-            /usr/bin/npm install --production
+            $NPM install --production
 
-            # 5. Wipe the old instance and start fresh to apply .env and code changes
-            $PM2_PATH delete RoAdmin 2>/dev/null || true
-            $PM2_PATH start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
-            $PM2_PATH save
+            # 5. The "Fresh Start" Sequence
+            $PM2 delete RoAdmin || true
+            $PM2 start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
+            $PM2 save
