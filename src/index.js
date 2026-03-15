@@ -21,8 +21,11 @@ if (llmKey) {
 
 const discordToken = process.env.DISCORD_TOKEN;
 
+log.info(`Starting RoAdmin (NODE_ENV=${process.env.NODE_ENV || "development"}) ...`);
+
 if (!discordToken) {
     log.error("Discord Token is undefined! Check your .env file or GitHub Secrets.");
+    process.exit(1);
 }
 
 const client = new discord.Client({
@@ -207,4 +210,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(discordToken);
+client.login(discordToken).catch((err) => {
+  log.error("Failed to login to Discord:", err.message);
+  process.exit(1);
+});
