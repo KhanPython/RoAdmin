@@ -12,9 +12,6 @@ module.exports = {
       restart_delay: 3000,
       max_restarts: 5,
       time: true,
-      merge_logs: true,
-      out_file: path.join(__dirname, "logs", "RoAdmin-out.log"),
-      error_file: path.join(__dirname, "logs", "RoAdmin-error.log"),
       env: {
         NODE_ENV: "production",
       },

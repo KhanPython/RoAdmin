@@ -47,9 +47,6 @@ jobs:
             pm2 kill 2>/dev/null || true
             rm -rf "$HOME/.pm2"
 
-            # Ensure app-local log directory exists and is writable
-            mkdir -p "$APP_DIR/logs"
-
             # 5. Start the bot fresh via ecosystem config (spawns a new daemon)
             pm2 start ecosystem.config.js
 
