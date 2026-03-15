@@ -45,8 +45,8 @@ jobs:
             # 4. Delete the old process entirely (ensures a true fresh start)
             pm2 delete "$APP_NAME" 2>/dev/null || true
 
-            # Remove log files so PM2 daemon recreates them with correct ownership
-            rm -f "$HOME/.pm2/logs/${APP_NAME}-out.log" "$HOME/.pm2/logs/${APP_NAME}-error.log"
+            # Flush logs via the daemon itself (daemon owns the files — no permission issues)
+            pm2 flush "$APP_NAME" 2>/dev/null || true
 
             # 5. Start the bot fresh via ecosystem config
             pm2 start ecosystem.config.js
