@@ -663,17 +663,20 @@ exports.GetUniverseName = async function (universeId) {
       const rootPlaceId = gameData.rootPlaceId || "unknown";
       const displayName = `[${name} (${rootPlaceId})](https://www.roblox.com/games/${rootPlaceId})`;
       
-      // Get icon from CDN using the universe ID
-      let icon = null;
-      try {
-        const iconUrl = `https://thumbnails.roblox.com/v1/games/icons?universeIds=${gameData.id}&size=512x512&format=Png&isCircular=false`;
-        const iconResponse = await axios.get(iconUrl);
-        
-        if (iconResponse.data && iconResponse.data.data && iconResponse.data.data[0]) {
-          icon = iconResponse.data.data[0].imageUrl || null;
+      // Get icon from cache or CDN
+      let icon = apiCache.getUniverseIcon(universeId);
+      if (!icon) {
+        try {
+          const iconUrl = `https://thumbnails.roblox.com/v1/games/icons?universeIds=${gameData.id}&size=512x512&format=Png&isCircular=false`;
+          const iconResponse = await axios.get(iconUrl);
+
+          if (iconResponse.data && iconResponse.data.data && iconResponse.data.data[0]) {
+            icon = iconResponse.data.data[0].imageUrl || null;
+            if (icon) apiCache.setUniverseIcon(universeId, icon);
+          }
+        } catch (iconError) {
+          log.debug("Failed to fetch icon:", iconError.message);
         }
-      } catch (iconError) {
-        log.debug("Failed to fetch icon:", iconError.message);
       }
       
       return {

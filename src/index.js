@@ -36,11 +36,6 @@ const client = new discord.Client({
 
 client.once("ready", async () => {
   try {
-    // Clear all global commands
-    await client.application?.commands.set([]);
-    log.info("Cleared all global commands");
-
-    // Now load new commands
     new wokcommands(client, {
       commandsDir: path.join(__dirname, "commands"),
       // featuresDir: path.join(__dirname, "features"),

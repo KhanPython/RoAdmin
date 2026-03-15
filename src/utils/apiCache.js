@@ -4,6 +4,9 @@
 const apiKeyCache = {};
 const universeNameCache = {};
 const consentCache = {};
+// Icon URL cache with TTL (not persisted — CDN URLs can expire)
+const universeIconCache = {};
+const ICON_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const { MessageFlags } = require("discord.js");
 const keystore = require("./keystore");
@@ -120,6 +123,23 @@ function setUniverseName(universeId, name) {
   }
 }
 
+function getUniverseIcon(universeId) {
+  const entry = universeIconCache[universeId];
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    delete universeIconCache[universeId];
+    return null;
+  }
+  return entry.url;
+}
+
+function setUniverseIcon(universeId, url, ttlMs = ICON_TTL_MS) {
+  universeIconCache[universeId] = {
+    url,
+    expiresAt: Date.now() + ttlMs,
+  };
+}
+
 function getCachedUniverses() {
   return Object.keys(apiKeyCache)
     .filter(id => universeNameCache[id])
@@ -154,6 +174,8 @@ module.exports = {
   getCachedUniverseIds,
   createMissingApiKeyEmbed,
   setUniverseName,
+  getUniverseIcon,
+  setUniverseIcon,
   getCachedUniverses,
   loadFromDisk,
   persistToDisk,

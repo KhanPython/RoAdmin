@@ -14,11 +14,11 @@ module.exports = {
     const consentStatus = guild && apiCache.hasConsent(guild.id);
     const storageMode = keystore.isEnabled() ? "Encrypted at rest" : "Memory-only (session)";
     const uptime = formatUptime(client.uptime);
-    const app = client.application;
+    const app = await client.application.fetch();
 
     const embed = new EmbedBuilder()
-      .setTitle(app?.name || "Bot")
-      .setDescription(app?.description || "No description set.")
+      .setTitle(app.name || "Bot")
+      .setDescription(app.description || "No description set.")
       .setColor(0x5865f2)
       .addFields(
         { name: "Version", value: "1.0.0", inline: true },
