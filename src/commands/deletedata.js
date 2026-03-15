@@ -79,7 +79,7 @@ module.exports = {
         .addFields(
           { name: "Key", value: key, inline: true },
           { name: "Datastore", value: datastoreName, inline: true },
-          { name: "Universe", value: String(universeId), inline: true },
+          { name: "Universe", value: `\`${universeId}\``, inline: true },
           { name: "Scope", value: scope, inline: true },
         )
         .setColor(0xff0000)

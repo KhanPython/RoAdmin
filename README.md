@@ -143,6 +143,31 @@ The bot replies with a confirmation embed showing the parsed parameters. Click *
 
 > `setData` creates entries that don't exist yet (upsert behaviour). The value can be JSON or a plain string.
 
+#### DataStore - Field Updates (updateData)
+
+Update specific fields inside a JSON entry without touching anything else:
+
+```
+@RoAdmin set Gold on key 12345678 in PlayerStats datastore universe 111222333 to 400
+@RoAdmin set Gold to 400 then set Money to 100 on key 12345678 in PlayerStats universe 111222333
+```
+
+Multiple field changes on the **same entry** are automatically merged into a single API call (one fetch + one write), regardless of how many fields you change. The result embed shows a compact before→after table:
+
+```
+Changes
+Gold    250 → 400
+Money   50  → 100
+```
+
+You can also chain `updateData` with other actions in the same request:
+
+```
+@RoAdmin set Gold on that entry to 400, then show me the data
+```
+
+> Use `updateData` (natural language field changes) when you want to change specific properties. Use `setData` only when you want to replace the entire entry value. `setData` cannot be batched.
+
 #### DataStore - Keys
 
 ```
@@ -150,7 +175,7 @@ The bot replies with a confirmation embed showing the parsed parameters. Click *
 @RoAdmin list keys in PlayerStats in universe 111222333
 ```
 
-> **Deletion is not available via NLP.** Use the `/deletedata` slash command instead — it requires a confirmation button click and attaches a snapshot of the deleted value. `setData` and `updateData` cannot be batched via NLP — they must be run one at a time.
+> **Deletion is not available via NLP.** Use the `/deletedata` slash command instead — it requires a confirmation button click and attaches a snapshot of the deleted value. `setData` cannot be batched via NLP — it must be run one at a time. Multiple `updateData` field changes on the same entry are automatically merged into one API call.
 
 #### Leaderboards (Ordered DataStores)
 
@@ -167,7 +192,7 @@ The bot replies with a confirmation embed showing the parsed parameters. Click *
 @RoAdmin unban 444 and 555 from universe 111222333
 ```
 
-> Batches are capped at **10 commands** per request. Read-only actions (showData, listKeys, checkBan, etc.) can be batched; data-writing actions (setData, deleteData) cannot.
+> Batches are capped at **10 commands** per request. Read-only actions (`showData`, `listKeys`, `checkBan`, etc.) and field-level updates (`updateData`) can be batched freely. Full-replacement writes (`setData`) cannot be batched.
 
 ---
 

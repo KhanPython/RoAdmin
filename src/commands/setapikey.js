@@ -89,9 +89,9 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setTitle("API Key Configured")
         .setColor(0x00FF00)
-        .setDescription(`API key for universe ${universeId} has been cached in the bot's memory.`)
+        .setDescription(`API key for universe \`${universeId}\` has been cached in the bot's memory.`)
         .addFields(
-          { name: "Universe ID:", value: universeId.toString() },
+          { name: "Universe ID:", value: `\`${universeId.toString()}\`` },
           { name: "Experience:", value: universeInfo.name || "Unknown" }
         )
         .setFooter({

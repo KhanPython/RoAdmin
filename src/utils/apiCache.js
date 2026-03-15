@@ -97,7 +97,7 @@ function createMissingApiKeyEmbed(universeId) {
     .setTitle("🔑 API Key Missing")
     .setColor(0xFF9900)
     .setDescription(
-      `No API key is currently cached for Universe **${universeId}**.\n\n` +
+      `No API key is currently cached for Universe \`${universeId}\`.\n\n` +
       `Please use the \`/setapikey\` command to store the API key for this universe.`
     )
     .addFields(

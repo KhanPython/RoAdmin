@@ -46,11 +46,11 @@ function buildErrorEmbed(message) {
 
 function buildBanEmbed(result, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo) {
   return buildResultEmbed(
-    `Ban User: ${userId}`,
+    `Ban User: \`${userId}\``,
     result,
     [
-      { name: "User ID", value: String(userId), inline: true },
-      { name: "Universe ID", value: String(universeId), inline: true },
+      { name: "User ID", value: `\`${userId}\``, inline: true },
+      { name: "Universe ID", value: `\`${universeId}\``, inline: true },
       { name: "Reason", value: reason, inline: true },
       { name: "Duration", value: duration || "permanent", inline: true },
       { name: "Exclude Alts", value: excludeAltAccounts ? "✅ Yes" : "❌ No", inline: true },
@@ -67,11 +67,11 @@ function buildBanEmbed(result, { userId, universeId, reason, duration, excludeAl
 
 function buildUnbanEmbed(result, { userId, universeId }, universeInfo) {
   return buildResultEmbed(
-    `Unban User: ${userId}`,
+    `Unban User: \`${userId}\``,
     result,
     [
-      { name: "User ID", value: String(userId), inline: true },
-      { name: "Universe ID", value: String(universeId), inline: true },
+      { name: "User ID", value: `\`${userId}\``, inline: true },
+      { name: "Universe ID", value: `\`${universeId}\``, inline: true },
     ],
     result.success ? "Player has been unbanned" : result.status,
     universeInfo?.icon ?? null,
@@ -84,8 +84,8 @@ function buildUnbanEmbed(result, { userId, universeId }, universeInfo) {
 function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
   const isActive = result.success && result.active;
   const fields = [
-    { name: "User ID", value: String(userId), inline: true },
-    { name: "Universe ID", value: String(universeId), inline: true },
+    { name: "User ID", value: `\`${userId}\``, inline: true },
+    { name: "Universe ID", value: `\`${universeId}\``, inline: true },
     { name: "Status", value: isActive ? "🔴 Banned" : "🟢 Not Banned", inline: true },
   ];
   if (isActive) {
@@ -96,7 +96,7 @@ function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
   }
 
   return buildResultEmbed(
-    `Ban Status: User ${userId}`,
+    `Ban Status: User \`${userId}\``,
     { success: true, status: isActive ? "User is currently banned" : "User is not banned" },
     fields,
     undefined,
@@ -141,7 +141,7 @@ function buildShowDataEmbed(result, { key, universeId, datastoreName }, universe
   const fields = [
     { name: "Key", value: String(key).substring(0, 1000), inline: true },
     { name: "Datastore", value: String(datastoreName).substring(0, 1000), inline: true },
-    { name: "Universe ID", value: String(universeId), inline: true },
+    { name: "Universe ID", value: `\`${universeId}\``, inline: true },
   ];
 
   if (result.success) {
@@ -168,7 +168,7 @@ function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, s
     result.success
       ? [
           { name: "Key", value: key, inline: true },
-          { name: "Universe ID", value: String(universeId), inline: true },
+          { name: "Universe ID", value: `\`${universeId}\``, inline: true },
           { name: "Datastore", value: datastoreName, inline: true },
           { name: "Scope", value: scope || "global", inline: true },
           { name: "Value", value: formatJsonValue(rawValue), inline: false },
@@ -182,18 +182,37 @@ function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, s
 
 // ─── Update Data (field-level patch) ────────────────────────────────────────
 
-function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, oldValue, newValue, summary, scope }, universeInfo) {
-  const fields = result.success
-    ? [
-        { name: "Key", value: key, inline: true },
-        { name: "Universe ID", value: String(universeId), inline: true },
-        { name: "Datastore", value: datastoreName, inline: true },
-        { name: "Scope", value: scope || "global", inline: true },
+function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, oldValue, newValue, summary, scope, changedFields }, universeInfo) {
+  let fields = [];
+  if (result.success) {
+    fields.push(
+      { name: "Key", value: key, inline: true },
+      { name: "Universe ID", value: `\`${universeId}\``, inline: true },
+      { name: "Datastore", value: datastoreName, inline: true },
+      { name: "Scope", value: scope || "global", inline: true },
+    );
+
+    if (changedFields && changedFields.length > 1) {
+      const maxFieldLen = Math.max(...changedFields.map(f => f.field.length));
+      const lines = changedFields.map(cf => {
+        const padded = cf.field.padEnd(maxFieldLen);
+        const before = String(cf.oldValue ?? "—");
+        const after  = String(cf.newValue);
+        return `${padded}  ${before} → ${after}`;
+      });
+      let block = lines.join("\n");
+      if (block.length > 990) block = block.slice(0, 990) + "\n…";
+      fields.push({ name: "Changes", value: `\`\`\`\n${block}\n\`\`\``, inline: false });
+    } else {
+      // Single field
+      fields.push(
         { name: "Field", value: String(field), inline: true },
         { name: "Old → New", value: `${formatJsonValue(oldValue ?? "undefined")}\n→\n${formatJsonValue(newValue)}`, inline: false },
-        { name: "Summary", value: summary, inline: false },
-      ]
-    : [];
+      );
+    }
+
+    fields.push({ name: "Summary", value: summary, inline: false });
+  }
 
   return buildResultEmbed(
     "Update Datastore Field",
@@ -214,7 +233,7 @@ function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope },
     result.success
       ? [
           { name: "Key", value: key, inline: true },
-          { name: "Universe ID", value: String(universeId), inline: true },
+          { name: "Universe ID", value: `\`${universeId}\``, inline: true },
           { name: "Datastore", value: datastoreName, inline: true },
           { name: "Scope", value: scope || "global", inline: true },
         ]
@@ -245,12 +264,12 @@ function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName
     "Remove Leaderboard Entry",
     result,
     [
-      { name: "User ID", value: String(userId), inline: true },
-      { name: "Universe ID", value: String(universeId), inline: true },
+      { name: "User ID", value: `\`${userId}\``, inline: true },
+      { name: "Universe ID", value: `\`${universeId}\``, inline: true },
       { name: "Leaderboard", value: leaderboardName, inline: true },
-      { name: "Key", value: key || String(userId), inline: true },
+      { name: "Key", value: key || `\`${userId}\``, inline: true },
     ],
-    result.success ? `Entry successfully removed for user ${userId}` : result.status,
+    result.success ? `Entry successfully removed for user \`${userId}\`` : result.status,
     universeInfo?.icon ?? null,
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );

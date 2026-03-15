@@ -78,6 +78,41 @@ const ALLOWED_ACTIONS = new Set(["ban", "unban", "showData", "listLeaderboard", 
 const MAX_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 600; // ms between consecutive Roblox API calls in a batch
 
+/**
+ * Merge consecutive updateData commands that target the same key+datastore+universe+scope
+ * into a single command with a `fields` array. This collapses N separate
+ * (fetch → patch → write) cycles into one, saving N-1 API round-trips.
+ * All other commands (including single updateData) are also normalised to use `fields`.
+ */
+function mergeConsecutiveUpdateData(commands) {
+  const merged = [];
+  for (const cmd of commands) {
+    const last = merged[merged.length - 1];
+    if (
+      cmd.action === "updateData" &&
+      last?.action === "updateData" &&
+      last.parameters.key === cmd.parameters.key &&
+      last.parameters.universeId === cmd.parameters.universeId &&
+      last.parameters.datastoreName === cmd.parameters.datastoreName &&
+      (last.parameters.scope || "global") === (cmd.parameters.scope || "global")
+    ) {
+      last.parameters.fields.push({ field: cmd.parameters.field, newValue: cmd.parameters.newValue });
+      last.confirmation_summary += `; set ${cmd.parameters.field} to ${cmd.parameters.newValue}`;
+    } else if (cmd.action === "updateData") {
+      merged.push({
+        ...cmd,
+        parameters: {
+          ...cmd.parameters,
+          fields: [{ field: cmd.parameters.field, newValue: cmd.parameters.newValue }],
+        },
+      });
+    } else {
+      merged.push(cmd);
+    }
+  }
+  return merged;
+}
+
 function buildEmbed(title, description, color = 0xff0000) {
   return new EmbedBuilder()
     .setTitle(title)
@@ -167,10 +202,11 @@ async function handleMessage(client, message) {
     return;
   }
 
-  // Data-mutating actions (setData, updateData) must not be batched
-  const DATA_MUTATING_ACTIONS = new Set(["setData", "updateData"]);
-  if (commands.length > 1 && commands.some(cmd => DATA_MUTATING_ACTIONS.has(cmd.action))) {
-    await replyEmbed(message, "Cannot Batch Data Writes", "`setData` and `updateData` commands must be executed one at a time.", 0xff0000);
+  // Full-replacement writes (setData) must not be batched - too easy to accidentally overwrite.
+  // updateData (field-level patches) ARE allowed to batch: execution is sequential so each
+  // write fetches the already-patched value from the previous step and chains correctly.
+  if (commands.length > 1 && commands.some(cmd => cmd.action === "setData")) {
+    await replyEmbed(message, "Cannot Batch Data Writes", "`setData` commands must be executed one at a time to avoid overwriting data.", 0xff0000);
     return;
   }
 
@@ -199,6 +235,9 @@ async function handleMessage(client, message) {
     } catch (_) { /* icon is optional */ }
   }));
 
+  // Collapse consecutive updateData commands on the same entry into one operation
+  commands = mergeConsecutiveUpdateData(commands);
+
   // For the confirmation thumbnail, pick the first universe's icon
   const primaryIcon = universeInfoMap.values().next().value?.icon ?? null;
   const isBatch = commands.length > 1;
@@ -208,8 +247,12 @@ async function handleMessage(client, message) {
 
   if (isBatch) {
     const summary = commands.map((cmd, i) => `**${i + 1}.** ${cmd.confirmation_summary}`).join("\n");
+    const distinctActions = [...new Set(commands.map(c => c.action))];
+    const actionLabel = distinctActions.length === 1
+      ? `${commands.length} ${distinctActions[0]}`
+      : `${commands.length} commands (${distinctActions.join(", ")})`;
     confirmEmbed = new EmbedBuilder()
-      .setTitle(`Confirm Batch: ${commands.length} ${commands[0].action} commands`)
+      .setTitle(`Confirm Batch: ${actionLabel}`)
       .setDescription(summary)
       .setColor(0xffa500)
       .setFooter({ text: "This request expires in 60 seconds" })
@@ -430,7 +473,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
       }
 
       case "updateData": {
-        // 1. Fetch the current value
+        // 1. Fetch the current value once (works for both single and merged multi-field updates)
         const fetchResult = await openCloud.GetDataStoreEntry(
           params.key,
           params.universeId,
@@ -445,14 +488,16 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           return buildErrorEmbed(`The value for key \"${params.key}\" is not a JSON object (it's a ${typeof currentValue}). Use \`setData\` to replace it entirely.`);
         }
 
-        // 2. Ask the LLM to patch the value
-        const instruction = `Set the field "${params.field}" to ${params.newValue}`;
-        const { patched, summary } = await patchDatastoreValue(currentValue, instruction);
+        // 2. Build one combined instruction covering all field changes, then patch in a single LLM call
+        const instruction = params.fields
+          .map(f => `Set the field "${f.field}" to ${f.newValue}`)
+          .join(". ");
+        const { patched, summary, oldValue: patchedOldValue } = await patchDatastoreValue(currentValue, instruction);
         if (!patched) {
           return buildErrorEmbed(`Could not apply update: ${summary}`);
         }
 
-        // 3. Write back the patched value
+        // 3. Single write back regardless of how many fields changed
         result = await openCloud.SetDataStoreEntry(
           params.key,
           patched,
@@ -461,19 +506,38 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.scope || "global"
         );
 
-        const resolvedFieldKey = Object.keys(currentValue).find(
-          k => k.toLowerCase() === params.field.toLowerCase()
-        ) ?? params.field;
+        if (params.fields.length === 1) {
+          const f = params.fields[0];
+          const resolvedFieldKey = Object.keys(currentValue).find(
+            k => k.toLowerCase() === f.field.toLowerCase()
+          ) ?? f.field;
+          return buildUpdateDataEmbed(result, {
+            key: params.key,
+            universeId: params.universeId,
+            datastoreName: params.datastoreName,
+            field: resolvedFieldKey,
+            oldValue: patchedOldValue !== undefined ? patchedOldValue : currentValue[resolvedFieldKey],
+            newValue: f.newValue,
+            summary,
+            scope: params.scope || "global",
+          }, universeInfo);
+        }
 
+        // Multi-field: build a changedFields array so each field gets its own row in the embed
+        const changedFields = params.fields.map(f => {
+          const k = Object.keys(currentValue).find(k2 => k2.toLowerCase() === f.field.toLowerCase()) ?? f.field;
+          return { field: k, oldValue: currentValue[k], newValue: f.newValue };
+        });
         return buildUpdateDataEmbed(result, {
           key: params.key,
           universeId: params.universeId,
           datastoreName: params.datastoreName,
-          field: resolvedFieldKey,
-          oldValue: currentValue[resolvedFieldKey],
-          newValue: params.newValue,
+          field: changedFields.map(f => f.field).join(", "),
+          oldValue: null,
+          newValue: null,
           summary,
           scope: params.scope || "global",
+          changedFields,
         }, universeInfo);
       }
 

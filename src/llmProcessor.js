@@ -45,7 +45,7 @@ Available actions and their parameters:
 - listBans       → required: universeId(number)
 - showData       → required: key(string), universeId(number), datastoreName(string)
 - setData        → required: key(string), value(string), universeId(number), datastoreName(string)  |  optional: scope(string, default "global")
-- updateData     → required: key(string), universeId(number), datastoreName(string), field(string), newValue(string)  |  optional: scope(string, default "global")  |  NOTE: use updateData when the user wants to change a SPECIFIC field/property inside a datastore entry (e.g. "set their money to 500", "change level to 10"). The field is the property name (e.g. "money"), newValue is the desired value (e.g. "500"). Use setData only when the user wants to replace the ENTIRE entry value.
+- updateData     → required: key(string), universeId(number), datastoreName(string), field(string), newValue(string)  |  optional: scope(string, default "global")  |  NOTE: use updateData when the user wants to change a SPECIFIC field/property inside a datastore entry (e.g. "set their money to 500", "change level to 10"). The field is the property name (e.g. "money"), newValue is the desired value (e.g. "500"). Use setData only when the user wants to replace the ENTIRE entry value. When the user wants to change MULTIPLE fields on the same entry (e.g. "set Gold to 400 and Money to 100", "set Gold to 400, then set Money to 100"), return one updateData object per field - they are executed sequentially so each one builds on the previous write.
 - listKeys       → required: universeId(number), datastoreName(string)  |  optional: scope(string, default "global")
 
 IMPORTANT: deleteData is NOT available through natural language. If the user asks to delete datastore entries, set action to null and set confirmation_summary to "Data deletion must be done explicitly via the /deletedata slash command for safety."
@@ -119,12 +119,13 @@ ALWAYS return an array, even for a single command.`;
 async function patchDatastoreValue(currentValue, instruction) {
   const systemPrompt = `You are a precise JSON editor. You will receive a JSON object and a natural language instruction describing which field(s) to change and to what value(s).
 
-Return ONLY a valid JSON object with two keys:
+Return ONLY a valid JSON object with three keys:
 - "patched": the full JSON object with ONLY the requested field(s) changed. All other fields must remain exactly as-is. Preserve types (numbers stay numbers, booleans stay booleans, etc.).
+- "oldValue": the previous value of the field that was changed, exactly as it appeared in the original object. If the field did not exist before, use null.
 - "summary": a concise one-line description of what was changed (e.g. "Changed money from 100 to 500").
 
 If the requested field does not exist in the object, add it and note that in the summary.
-If the instruction is ambiguous or cannot be applied, return { "patched": null, "summary": "<explanation of why>" }.
+If the instruction is ambiguous or cannot be applied, return { "patched": null, "oldValue": null, "summary": "<explanation of why>" }.
 
 Do NOT wrap in markdown code fences. Return ONLY the JSON.`;
 
@@ -147,6 +148,7 @@ Do NOT wrap in markdown code fences. Return ONLY the JSON.`;
 
     return {
       patched: parsed.patched ?? null,
+      oldValue: parsed.oldValue !== undefined ? parsed.oldValue : undefined,
       summary: parsed.summary ?? "No summary provided.",
     };
   } catch (err) {

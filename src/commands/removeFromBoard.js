@@ -92,8 +92,8 @@ module.exports = {
           .setColor(0xFFFF00)
           .setDescription(`**Experience:** ${universeInfo.name}\n\n⚠️ ${checkResult.message}`)
           .addFields(
-            { name: "UserId:", value: userId.toString(), inline: true },
-            { name: "Universe ID:", value: universeId.toString(), inline: true },
+            { name: "UserId:", value: `\`${userId}\``, inline: true },
+            { name: "Universe ID:", value: `\`${universeId}\``, inline: true },
             { name: "Leaderboard Name:", value: leaderboardName, inline: true },
             { name: "Key searched:", value: keyToCheck, inline: true }
           )
