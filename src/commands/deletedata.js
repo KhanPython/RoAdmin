@@ -55,7 +55,7 @@ module.exports = {
     if (!universeId || isNaN(universeId)) return "Please provide a valid Universe ID.";
     if (!datastoreName || datastoreName.trim().length === 0) return "Please provide a datastore name.";
 
-    await interaction.deferReply();
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       if (!openCloud.hasApiKey(universeId)) {
@@ -113,7 +113,8 @@ module.exports = {
         collector.stop("handled");
 
         if (i.customId === "deletedata_cancel") {
-          await i.update({ content: "Deletion cancelled.", embeds: [], components: [] });
+          await i.deferUpdate();
+          await interaction.deleteReply();
           return;
         }
 
@@ -148,7 +149,7 @@ module.exports = {
 
       collector.on("end", (_, reason) => {
         if (reason === "time") {
-          interaction.editReply({ content: "Deletion timed out - no action taken.", embeds: [], components: [] }).catch(() => {});
+          interaction.deleteReply().catch(() => {});
         }
       });
     } catch (error) {

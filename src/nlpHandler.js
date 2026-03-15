@@ -29,6 +29,7 @@ const {
   buildErrorEmbed,
   buildProcessingEmbed,
 } = require("./utils/formatters");
+const { scheduleAutoDelete } = require("./utils/autoDelete");
 
 // Keywords that must appear in the message for it to be forwarded to the LLM.
 // Anything that doesn't match is silently ignored (no API call, no reply).
@@ -516,11 +517,13 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
         );
         const showEmbed = buildShowDataEmbed(result, { key: params.key, universeId: params.universeId, datastoreName: params.datastoreName }, universeInfo);
         if (result.success && result.data !== null && result.data !== undefined) {
+          showEmbed.setFooter({ text: "This message will be auto-deleted in 2 minutes" });
           const jsonString = JSON.stringify(result.data, null, 2);
           const { AttachmentBuilder } = require("discord.js");
           const fileBuffer = Buffer.from(jsonString, "utf-8");
           const attachment = new AttachmentBuilder(fileBuffer, { name: `${params.key}_data.txt` });
-          await channel.send({ embeds: [showEmbed], files: [attachment] });
+          const sentMsg = await channel.send({ embeds: [showEmbed], files: [attachment] });
+          scheduleAutoDelete(sentMsg);
         } else {
           showEmbed.addFields({ name: "Value", value: "No data found for this key.", inline: false });
           await channel.send({ embeds: [showEmbed] });

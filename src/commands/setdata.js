@@ -63,7 +63,7 @@ module.exports = {
     if (!datastoreName || datastoreName.trim().length === 0) return "Please provide a datastore name.";
     if (!rawValue || rawValue.trim().length === 0) return "Please provide a value to store.";
 
-    await interaction.deferReply();
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // Attempt to parse value as JSON; fall back to raw string
     let parsedValue = rawValue;

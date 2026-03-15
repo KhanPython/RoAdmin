@@ -78,7 +78,8 @@ module.exports = {
       collector.stop("handled");
 
       if (i.customId === "forgetme_cancel") {
-        await i.update({ content: "Cancelled. No data was deleted.", embeds: [], components: [] });
+        await i.deferUpdate();
+        await interaction.deleteReply();
         return;
       }
 
