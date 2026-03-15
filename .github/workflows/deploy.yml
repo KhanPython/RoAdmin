@@ -42,16 +42,28 @@ jobs:
             # 3. Install production dependencies (incremental — only installs what changed)
             npm install --omit=dev
 
-            # 4. Restart the bot — delete old process, start fresh
-            # Keep the PM2 daemon alive so 'pm2 logs' works from interactive SSH.
-            # Only kill+recreate the daemon if it's unreachable (stale socket, etc.)
-            if ! pm2 ping >/dev/null 2>&1; then
-              echo "PM2 daemon unreachable — killing stale daemon"
-              pm2 kill 2>/dev/null || true
-            fi
-            pm2 delete "$APP_NAME" 2>/dev/null || true
+            # 4. Kill the PM2 daemon entirely and wipe stale state
+            # (prior sudo/root runs leave ~/.pm2/ root-owned; daemon can't write logs there)
+            pm2 kill 2>/dev/null || true
+            rm -rf "$HOME/.pm2" || true
+
+            # 5. Start the bot fresh via ecosystem config (spawns a new daemon)
             pm2 start ecosystem.config.js
+
+            # 6. Persist PM2 process list so the bot survives VM reboots
             pm2 save
 
-            # 5. Quick sanity check
-            pm2 list
+            # 7. Diagnostics: show actual log paths and verify content
+            sleep 5
+            echo "=== PM2 DESCRIBE ==="
+            pm2 describe "$APP_NAME" | grep -i 'log\|out_file\|error_file\|out log\|error log\|exec mode\|status\|restarts'
+            echo "=== LOG FILES ==="
+            ls -la "$HOME/.pm2/logs/" 2>/dev/null || echo "~/.pm2/logs/ does not exist"
+            echo "=== STDOUT LOG CONTENT ==="
+            cat "$HOME/.pm2/logs/${APP_NAME}-out.log" 2>/dev/null || echo "No out.log found"
+            cat "$HOME/.pm2/logs/${APP_NAME}-out-0.log" 2>/dev/null || echo "No out-0.log found"
+            echo "=== STDERR LOG CONTENT ==="
+            cat "$HOME/.pm2/logs/${APP_NAME}-error.log" 2>/dev/null || echo "No error.log found"
+            cat "$HOME/.pm2/logs/${APP_NAME}-error-0.log" 2>/dev/null || echo "No error-0.log found"
+            echo "=== PM2 SHOW ==="
+            pm2 show "$APP_NAME"
