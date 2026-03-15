@@ -166,7 +166,7 @@ No test framework is configured (`npm test` is a stub). There are no test files 
 | `RATE_LIMIT_MAX` | No | Max Roblox API requests per universe per window (default: 50). |
 | `RATE_LIMIT_WINDOW_MS` | No | Rate limit window in ms (default: 60000). |
 
-Per-universe Roblox API keys are set at runtime via `/setapikey`. When `ENCRYPTION_KEY` is configured, keys are encrypted and persisted to `data/keystore.enc` — they survive bot restarts. Without `ENCRYPTION_KEY`, keys are held in memory only and cleared on restart.
+Per-universe Roblox API keys are set at runtime via `/setapikey`. When `ENCRYPTION_KEY` is configured, keys are encrypted and persisted to `data/keystore.enc` - they survive bot restarts. Without `ENCRYPTION_KEY`, keys are held in memory only and cleared on restart.
 
 ---
 
@@ -268,7 +268,7 @@ All Roblox API calls pass through a sliding-window rate limiter (`src/utils/rate
 
 ### Structured Logging
 
-All log output goes through `src/utils/logger.js` which gates by `LOG_LEVEL`. In production (`NODE_ENV=production`), debug output is suppressed — no response data, request URLs, or other potentially sensitive information is logged.
+All log output goes through `src/utils/logger.js` which gates by `LOG_LEVEL`. In production (`NODE_ENV=production`), debug output is suppressed - no response data, request URLs, or other potentially sensitive information is logged.
 
 ---
 
@@ -301,7 +301,7 @@ Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCO
 ## What to Avoid
 
 - Do not log API keys, raw response data, or user-identifiable information. Use `log.debug()` for development-only output that is suppressed in production.
-- Do not use `console.log` / `console.error` directly — use the `log` utility from `src/utils/logger.js`.
+- Do not use `console.log` / `console.error` directly - use the `log` utility from `src/utils/logger.js`.
 - Do not skip `deferReply` before async operations; Discord invalidates interactions after 3 seconds.
 - Do not use `reply` after `deferReply`; use `editReply` instead.
 - Do not add a database dependency - the design intentionally uses Roblox DataStores as the sole persistence layer.

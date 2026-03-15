@@ -1,10 +1,10 @@
-// API key cache — stores keys in memory, auto-flushes to encrypted keystore on mutation
+// API key cache - stores keys in memory, auto-flushes to encrypted keystore on mutation
 
 // In-memory caches
 const apiKeyCache = {};
 const universeNameCache = {};
 const consentCache = {};
-// Icon URL cache with TTL (not persisted — CDN URLs can expire)
+// Icon URL cache with TTL (not persisted - CDN URLs can expire)
 const universeIconCache = {};
 const ICON_TTL_MS = 60 * 60 * 1000; // 1 hour
 

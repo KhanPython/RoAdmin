@@ -1,4 +1,4 @@
-// Encrypted keystore — AES-256-GCM persistence for API keys (memory-only if ENCRYPTION_KEY unset)
+// Encrypted keystore - AES-256-GCM persistence for API keys (memory-only if ENCRYPTION_KEY unset)
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -84,12 +84,12 @@ function loadKeystore() {
   deriveKey();
 
   if (!_enabled) {
-    log.info("No ENCRYPTION_KEY configured — running in memory-only mode");
+    log.info("No ENCRYPTION_KEY configured - running in memory-only mode");
     return {};
   }
 
   if (!fs.existsSync(KEYSTORE_PATH)) {
-    log.info("No existing keystore found — starting fresh");
+    log.info("No existing keystore found - starting fresh");
     return {};
   }
 
@@ -98,7 +98,7 @@ function loadKeystore() {
     const plaintext = decrypt(raw);
 
     if (plaintext === null) {
-      log.warn("Failed to decrypt keystore — master key may have changed. Backing up and starting fresh.");
+      log.warn("Failed to decrypt keystore - master key may have changed. Backing up and starting fresh.");
       try {
         fs.renameSync(KEYSTORE_PATH, KEYSTORE_BAK);
       } catch {
@@ -120,7 +120,7 @@ function loadKeystore() {
 // Encrypt and atomically write keystore to disk (write → tmp → rename)
 function saveKeystore(data) {
   deriveKey();
-  if (!_enabled) return true; // not a failure — persistence just isn't configured
+  if (!_enabled) return true; // not a failure - persistence just isn't configured
 
   try {
     fs.mkdirSync(KEYSTORE_DIR, { recursive: true });

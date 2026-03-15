@@ -3,7 +3,7 @@ const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
-const { buildDeleteDataEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildDeleteDataEmbed, buildErrorEmbed, buildProcessingEmbed } = require("../utils/formatters");
 
 module.exports = {
   category: "Player Data",
@@ -116,7 +116,7 @@ module.exports = {
           return;
         }
 
-        await i.update({ content: "Deleting…", embeds: [], components: [] });
+        await i.update({ embeds: [buildProcessingEmbed("Deleting datastore entry…")], components: [] });
 
         // Snapshot current value before deleting so it can be attached as a file
         const snapshot = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);

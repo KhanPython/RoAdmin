@@ -11,7 +11,7 @@ function checkLimit(universeId) {
   const { allowed, retryAfter } = robloxLimiter.check(`universe:${universeId}`);
   if (!allowed) {
     const secs = Math.ceil(retryAfter / 1000);
-    log.warn(`Rate limit hit for universe ${universeId} — retry in ${secs}s`);
+    log.warn(`Rate limit hit for universe ${universeId} - retry in ${secs}s`);
     return createDataStoreErrorResponse(
       "RateLimit",
       `Rate limit reached for this universe. Try again in ${secs}s.`
@@ -616,7 +616,7 @@ function createSuccessResponse(additionalFields = {}) {
 }
 
 function logError(context, error) {
-  log.error(`[${context}] Status: ${error.response?.status} — ${error.message}`);
+  log.error(`[${context}] Status: ${error.response?.status} - ${error.message}`);
 }
 
 function parseDuration(duration) {

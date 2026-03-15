@@ -29,6 +29,14 @@ function buildErrorEmbed(message) {
     .setTimestamp();
 }
 
+function buildProcessingEmbed(description = "Processing your request. This may take a moment.") {
+  return new EmbedBuilder()
+    .setTitle("Processing...")
+    .setDescription(description)
+    .setColor(0x5865f2)
+    .setTimestamp();
+}
+
 function buildBanEmbed(result, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo) {
   return buildResultEmbed(
     `Ban User: \`${userId}\``,
@@ -232,6 +240,7 @@ function formatKeyEntries(data, _pageNum, { universeId, scope }) {
 module.exports = {
   buildResultEmbed,
   buildErrorEmbed,
+  buildProcessingEmbed,
   buildBanEmbed,
   buildUnbanEmbed,
   buildCheckBanEmbed,

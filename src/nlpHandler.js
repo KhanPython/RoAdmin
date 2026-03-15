@@ -1,4 +1,4 @@
-// NLP handler — parses @mention messages via Anthropic, shows confirmation, and executes commands
+// NLP handler - parses @mention messages via Anthropic, shows confirmation, and executes commands
 
 const {
   EmbedBuilder,
@@ -27,6 +27,7 @@ const {
   buildRemoveFromBoardEmbed,
   formatKeyEntries,
   buildErrorEmbed,
+  buildProcessingEmbed,
 } = require("./utils/formatters");
 
 // Keywords that must appear in the message for it to be forwarded to the LLM.
@@ -133,7 +134,7 @@ async function replyEmbed(message, title, description, color) {
   return message.reply({ embeds: [buildEmbed(title, description, color)] });
 }
 
-// Main entry point — call from client.on('messageCreate', ...)
+// Main entry point - call from client.on('messageCreate', ...)
 async function handleMessage(client, message) {
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
@@ -141,7 +142,7 @@ async function handleMessage(client, message) {
   const textRaw = message.content.replace(/<@!?\d+>/g, "").trim();
   const textLower = textRaw.toLowerCase();
 
-  // About intent — handle before consent/keyword checks (no LLM required, but admin required)
+  // About intent - handle before consent/keyword checks (no LLM required, but admin required)
   const ABOUT_PHRASES = ["about yourself", "about you", "who are you", "what are you", "introduce yourself", "tell me about"];
   if (ABOUT_PHRASES.some(p => textLower.includes(p))) {
     if (!message.member?.permissions.has("Administrator")) {
@@ -289,12 +290,7 @@ async function handleMessage(client, message) {
   }
 
   // Send thinking indicator immediately before the slow LLM call
-  const thinkingEmbed = new EmbedBuilder()
-    .setTitle("Processing...")
-    .setDescription("Analyzing your request. This may take a moment.")
-    .setColor(0x5865f2)
-    .setTimestamp();
-  const thinkingReply = await message.reply({ embeds: [thinkingEmbed] });
+  const thinkingReply = await message.reply({ embeds: [buildProcessingEmbed("Analyzing your request. This may take a moment.")] });
 
   const editThinkingError = async (title, description, color = 0xff0000) => {
     return thinkingReply.edit({ embeds: [buildEmbed(title, description, color)], components: [] });
@@ -433,11 +429,10 @@ async function handleMessage(client, message) {
 
     // Confirm - execute all commands
     try {
-      await i.update({
-        content: isBatch ? `Executing ${commands.length} commands…` : "Executing…",
-        embeds: [],
-        components: [],
-      });
+      const processingDesc = isBatch
+        ? `Executing ${commands.length} commands…`
+        : "Executing command…";
+      await i.update({ embeds: [buildProcessingEmbed(processingDesc)], components: [] });
 
       const resultEmbeds = [];
       for (const cmd of commands) {
@@ -457,12 +452,8 @@ async function handleMessage(client, message) {
         await message.channel.send({ embeds: batch });
       }
 
-      // Update the confirmation message to reflect completion
-      await reply.edit({
-        content: isBatch
-          ? `Executed ${commands.length} commands.`
-          : "Executed.",
-      }).catch(() => {});
+      // Remove the confirmation message now that results are shown
+      await reply.delete().catch(() => {});
     } catch (err) {
       log.error("Error executing confirmed command:", err.message);
       await message.channel.send({

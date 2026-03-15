@@ -8,6 +8,7 @@ const {
 } = require("discord.js");
 
 const apiCache = require("../utils/apiCache");
+const { buildProcessingEmbed } = require("../utils/formatters");
 const llmCache = require("../utils/llmCache");
 const { clearUserHistory, clearChannelHistories } = require("../nlpHandler");
 
@@ -82,7 +83,8 @@ module.exports = {
         return;
       }
 
-      // Execute deletion
+      await i.update({ embeds: [buildProcessingEmbed("Removing stored data…")], components: [] });
+
       const deleted = [];
 
       if (scope === "personal") {
@@ -115,7 +117,7 @@ module.exports = {
         .setColor(0x00ff00)
         .setTimestamp();
 
-      await i.update({ embeds: [resultEmbed], components: [] });
+      await interaction.editReply({ embeds: [resultEmbed], components: [] });
     });
 
     collector.on("end", (_, reason) => {

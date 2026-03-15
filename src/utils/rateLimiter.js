@@ -1,4 +1,4 @@
-// Sliding-window rate limiter — 50 req/60s per key (configurable via env)
+// Sliding-window rate limiter - 50 req/60s per key (configurable via env)
 
 const DEFAULT_MAX = parseInt(process.env.RATE_LIMIT_MAX, 10) || 50;
 const DEFAULT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60_000;

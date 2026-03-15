@@ -1,4 +1,4 @@
-// LLM API key cache — stores Anthropic key in memory, co-persisted in encrypted keystore
+// LLM API key cache - stores Anthropic key in memory, co-persisted in encrypted keystore
 
 let _key = null;
 let _skipPersist = false;

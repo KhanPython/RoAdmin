@@ -1,4 +1,4 @@
-// Structured logger — gates output by level (debug suppressed in production)
+// Structured logger - gates output by level (debug suppressed in production)
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 

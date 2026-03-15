@@ -175,7 +175,7 @@ You can also chain `updateData` with other actions in the same request:
 @RoAdmin list keys in PlayerStats in universe 111222333
 ```
 
-> **Deletion is not available via NLP.** Use the `/deletedata` slash command instead — it requires a confirmation button click and attaches a snapshot of the deleted value. `setData` cannot be batched via NLP — it must be run one at a time. Multiple `updateData` field changes on the same entry are automatically merged into one API call.
+> **Deletion is not available via NLP.** Use the `/deletedata` slash command instead - it requires a confirmation button click and attaches a snapshot of the deleted value. `setData` cannot be batched via NLP - it must be run one at a time. Multiple `updateData` field changes on the same entry are automatically merged into one API call.
 
 #### Leaderboards (Ordered DataStores)
 
