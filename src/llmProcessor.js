@@ -6,6 +6,7 @@
 
 const Anthropic = require("@anthropic-ai/sdk");
 const llmCache = require("./utils/llmCache");
+const log = require("./utils/logger");
 
 const FALLBACK = [{
   action: null,
@@ -102,7 +103,7 @@ ALWAYS return an array, even for a single command.`;
       confirmation_summary: cmd.confirmation_summary ?? "",
     }));
   } catch (err) {
-    console.error("[NLP] processCommand error:", err.message);
+    log.error("processCommand error:", err.message);
     return FALLBACK;
   }
 }
@@ -152,7 +153,7 @@ Do NOT wrap in markdown code fences. Return ONLY the JSON.`;
       summary: parsed.summary ?? "No summary provided.",
     };
   } catch (err) {
-    console.error("[NLP] patchDatastoreValue error:", err.message);
+    log.error("patchDatastoreValue error:", err.message);
     return { patched: null, summary: "Failed to process the update. Please try again." };
   }
 }

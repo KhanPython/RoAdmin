@@ -10,6 +10,10 @@ const apiKeyCache = {};
 
 // In-memory universe name cache: { universeId: universeName }
 const universeNameCache = {};
+
+// In-memory consent cache: { guildId: { accepted, acceptedBy, acceptedAt } }
+const consentCache = {};
+
 const { MessageFlags } = require("discord.js");
 const keystore = require("./keystore");
 
@@ -30,6 +34,9 @@ function persistToDisk() {
     const llmKey = _llmKeyGetter();
     if (llmKey) data.llmKey = llmKey;
   }
+  if (Object.keys(consentCache).length > 0) {
+    data.consent = { ...consentCache };
+  }
   return keystore.saveKeystore(data);
 }
 
@@ -49,6 +56,9 @@ function loadFromDisk(llmKeyGetter) {
   }
   if (data.universeNames) {
     Object.assign(universeNameCache, data.universeNames);
+  }
+  if (data.consent) {
+    Object.assign(consentCache, data.consent);
   }
 
   return { llmKey: data.llmKey || null };
@@ -186,6 +196,40 @@ function getCachedUniverses() {
     .map(id => ({ id: Number(id), name: universeNameCache[id] }));
 }
 
+// ── Data processing consent (per guild) ─────────────────────────────────
+
+/**
+ * Record that a guild administrator accepted data processing consent.
+ * @param {string} guildId
+ * @param {string} userId - Discord ID of the admin who accepted
+ */
+function setConsent(guildId, userId) {
+  consentCache[guildId] = {
+    accepted: true,
+    acceptedBy: userId,
+    acceptedAt: new Date().toISOString(),
+  };
+  persistToDisk();
+}
+
+/**
+ * Check whether a guild has accepted data processing consent.
+ * @param {string} guildId
+ * @returns {boolean}
+ */
+function hasConsent(guildId) {
+  return consentCache[guildId]?.accepted === true;
+}
+
+/**
+ * Revoke consent for a guild and flush to disk.
+ * @param {string} guildId
+ */
+function revokeConsent(guildId) {
+  delete consentCache[guildId];
+  persistToDisk();
+}
+
 module.exports = {
   getApiKey,
   setApiKey,
@@ -199,4 +243,7 @@ module.exports = {
   getCachedUniverses,
   loadFromDisk,
   persistToDisk,
+  setConsent,
+  hasConsent,
+  revokeConsent,
 };

@@ -1,6 +1,26 @@
 const axios = require("axios").default;
 const { OpenCloud, DataStoreService } = require("rbxcloud");
 const apiCache = require("./utils/apiCache");
+const log = require("./utils/logger");
+const { robloxLimiter } = require("./utils/rateLimiter");
+
+// ── Rate limit gate ─────────────────────────────────────────────────────
+/**
+ * Check the per-universe sliding window rate limit.
+ * Returns an error response object if the limit is exceeded, or null if allowed.
+ */
+function checkLimit(universeId) {
+  const { allowed, retryAfter } = robloxLimiter.check(`universe:${universeId}`);
+  if (!allowed) {
+    const secs = Math.ceil(retryAfter / 1000);
+    log.warn(`Rate limit hit for universe ${universeId} — retry in ${secs}s`);
+    return createDataStoreErrorResponse(
+      "RateLimit",
+      `Rate limit reached for this universe. Try again in ${secs}s.`
+    );
+  }
+  return null;
+}
 
 // ============================================
 // DATA STORE OPERATIONS
@@ -18,6 +38,8 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     if (!datastoreName) {
       throw new Error("Datastore name is required");
     }
@@ -35,28 +57,26 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries/${encodedKey}`;
     const url = `https://apis.roblox.com/cloud/v2/${path}`;
 
-    console.log(`[DEBUG] GetDataStoreEntry - URL: ${url}`);
-    console.log(`[DEBUG] GetDataStoreEntry - Key: ${key}, Encoded: ${encodedKey}`);
+    log.debug(`GetDataStoreEntry - URL: ${url}`);
+    log.debug(`GetDataStoreEntry - Key: ${key}, Encoded: ${encodedKey}`);
 
     const response = await axios.get(url, {
       headers: getApiHeaders(universeId),
     });
 
-    console.log(`[DEBUG] GetDataStoreEntry - Response status: ${response.status}`);
-    console.log(`[DEBUG] GetDataStoreEntry - Response data type: ${typeof response.data}`);
-    console.log(`[DEBUG] GetDataStoreEntry - Response data (truncated): ${JSON.stringify(response.data).substring(0, 200)}`);
+    log.debug(`GetDataStoreEntry - Response status: ${response.status}`);
 
     if (response.status === 200) {
       // Check if response is an array (this means we got a list, not a single entry)
       if (Array.isArray(response.data)) {
-        console.log(`[DEBUG] GetDataStoreEntry - Received List/Array. Searching specifically for key "${key}"...`);
+        log.debug(`GetDataStoreEntry - Received List/Array. Searching for key "${key}"`);
         // The API returned a list of entries (likely prefix match). We need to find the EXACT entry with ID matching our key.
         const entry = response.data.find(e => e.id === key);
         if (entry) {
           // Now fetch the actual value from the entry path
           try {
             const valueUrl = `https://apis.roblox.com/cloud/v2/${entry.path}`;
-            console.log(`[DEBUG] Fetching actual value from: ${valueUrl}`);
+            log.debug(`Fetching actual value from: ${valueUrl}`);
             const valueResponse = await axios.get(valueUrl, {
               headers: getApiHeaders(universeId),
             });
@@ -74,7 +94,7 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
             
             return createSuccessResponse({ data });
           } catch (valueError) {
-            console.error(`[ERROR] Failed to fetch value:`, valueError.message);
+            log.error("Failed to fetch value:", valueError.message);
             return createDataStoreErrorResponse("GetDataStoreEntry", `Found key but failed to fetch value: ${valueError.message}`, { data: null });
           }
         }
@@ -102,7 +122,7 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     }
     return createDataStoreErrorResponse("GetDataStoreEntry", `Unexpected status: ${response.status}`, { data: null });
   } catch (error) {
-    console.error(`Error getting data for key ${key}:`, error.message);
+    log.error(`Error getting data for key ${key}:`, error.message);
     // Return empty data rather than erroring out, in case entry doesn't exist
     if (error.response?.status === 404) {
       return createSuccessResponse({ data: null });
@@ -130,6 +150,8 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName) {
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const apiKey = apiCache.getApiKey(universeId);
     if (!apiKey) {
       throw new Error(`API key not found in cache for universe ${universeId}`);
@@ -150,7 +172,7 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName) {
     }
     return createDataStoreErrorResponse("GetPlayerData", `Unexpected status: ${response.status}`, { data: null });
   } catch (error) {
-    console.error(`Error getting data for user ${userId}:`, error.message);
+    log.error(`Error getting data for user ${userId}:`, error.message);
     // Return empty data rather than erroring out, in case entry doesn't exist
     if (error.response?.status === 404) {
       return createSuccessResponse({ data: null });
@@ -172,6 +194,8 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const apiKey = apiCache.getApiKey(universeId);
     if (!apiKey) {
       throw new Error(`API key not found in cache for universe ${universeId}`);
@@ -194,7 +218,7 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
     }
     return createDataStoreErrorResponse("SetPlayerData", `Unexpected status: ${response.status}`);
   } catch (error) {
-    console.error(`Error setting data for user ${userId}:`, error.message);
+    log.error(`Error setting data for user ${userId}:`, error.message);
     return createDataStoreErrorResponse("SetPlayerData", error.message);
   }
 };
@@ -212,7 +236,7 @@ exports.IncrementPlayerData = async function (userId, amount, datastoreName) {
     const [newValue, keyInfo] = await datastore.IncrementAsync(`player_${userId}`, amount);
     return createSuccessResponse({ newValue });
   } catch (error) {
-    console.error(`Error incrementing data for user ${userId}:`, error);
+    log.error(`Error incrementing data for user ${userId}:`, error.message);
     return createDataStoreErrorResponse("IncrementPlayerData", error.message, { newValue: null });
   }
 };
@@ -230,7 +254,7 @@ exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName
     const newValue = await datastore.UpdateAsync(`player_${userId}`, updateFunction);
     return createSuccessResponse({ newValue });
   } catch (error) {
-    console.error(`Error updating data for user ${userId}:`, error);
+    log.error(`Error updating data for user ${userId}:`, error.message);
     return createDataStoreErrorResponse("UpdatePlayerData", error.message, { newValue: null });
   }
 };
@@ -247,7 +271,7 @@ exports.RemovePlayerData = async function (userId, datastoreName) {
     const oldValue = await datastore.RemoveAsync(`player_${userId}`);
     return createSuccessResponse({ oldValue });
   } catch (error) {
-    console.error(`Error removing data for user ${userId}:`, error);
+    log.error(`Error removing data for user ${userId}:`, error.message);
     return createDataStoreErrorResponse("RemovePlayerData", error.message, { oldValue: null });
   }
 };
@@ -264,6 +288,8 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const apiKey = apiCache.getApiKey(universeId);
     if (!apiKey) {
       throw new Error(`API key not found in cache for universe ${universeId}`);
@@ -282,8 +308,7 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
       headers: getApiHeaders(universeId),
     });
 
-    console.log(`[DEBUG] ListOrderedDataStoreEntries response keys:`, Object.keys(response.data));
-    console.log(`[DEBUG] ListOrderedDataStoreEntries raw data:`, JSON.stringify(response.data).slice(0, 500));
+    log.debug("ListOrderedDataStoreEntries response keys:", Object.keys(response.data));
 
     // Check different possible response structures
     const entries = response.data.orderedDataStoreEntries || response.data.dataStoreEntries || response.data.entries || [];
@@ -291,8 +316,7 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
 
     return createSuccessResponse({ entries: Array.isArray(entries) ? entries : [], nextPageToken });
   } catch (error) {
-    console.error(`Error listing ordered datastore entries:`, error);
-    console.error(`[DEBUG] Error response data:`, error.response?.data);
+    log.error("Error listing ordered datastore entries:", error.message);
     const status = error.response?.status;
     if (status === 404) {
       return createDataStoreErrorResponse("ListOrderedDataStoreEntries", "Ordered datastore or scope not found");
@@ -307,6 +331,8 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const apiKey = apiCache.getApiKey(universeId);
     if (!apiKey) {
       throw new Error(`API key not found in cache for universe ${universeId}`);
@@ -327,9 +353,7 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
 
     return createDataStoreErrorResponse("RemoveOrderedDataStoreData", `Unexpected response status: ${response.status}`);
   } catch (error) {
-    console.error(`Error removing ordered datastore data for user ${userId}:`, error.message);
-    console.error(`[DEBUG] Error status: ${error.response?.status}`);
-    console.error(`[DEBUG] Error response data:`, error.response?.data);
+    log.error(`Error removing ordered datastore data for user ${userId}:`, error.message);
     
     if (error.response?.status === 404) {
       return createDataStoreErrorResponse("RemoveOrderedDataStoreData", "Key not found in ordered datastore");
@@ -377,7 +401,7 @@ exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreNa
       pageToken = response.nextPageToken;
     }
   } catch (error) {
-    console.error(`Error checking ordered datastore key:`, error);
+    log.error("Error checking ordered datastore key:", error.message);
     return { exists: false, entry: null, message: `Error: ${error.message}` };
   }
 };
@@ -400,6 +424,8 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     let durationSeconds = null;
     let expiresDate = null;
     let durationString = null;
@@ -460,6 +486,8 @@ exports.UnbanUser = async function (userId, universeId = null) {
     if (!universeId) {
       throw new Error("Universe ID is required");
     }
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const payload = { gameJoinRestriction: { active: false } };
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${userId}`;
 
@@ -500,6 +528,8 @@ exports.UnbanUser = async function (userId, universeId = null) {
 exports.CheckBanStatus = async function (userId, universeId) {
   try {
     if (!universeId) throw new Error("Universe ID is required");
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${userId}`;
     const response = await axios.get(url, { headers: getApiHeaders(universeId) });
     if (response.status === 200) {
@@ -538,6 +568,8 @@ exports.CheckBanStatus = async function (userId, universeId) {
 exports.ListBans = async function (universeId, pageToken = null) {
   try {
     if (!universeId) throw new Error("Universe ID is required");
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions`);
     url.searchParams.set("filter", "gameJoinRestriction.active==true");
     url.searchParams.set("maxPageSize", "10");
@@ -574,6 +606,8 @@ exports.ListBans = async function (universeId, pageToken = null) {
 exports.SetDataStoreEntry = async function (key, value, universeId, datastoreName, scope = "global") {
   try {
     if (!universeId) throw new Error("Universe ID is required");
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     if (!datastoreName) throw new Error("Datastore name is required");
     if (!key) throw new Error("Entry key is required");
     const encodedKey = encodeURIComponent(key);
@@ -608,6 +642,8 @@ exports.SetDataStoreEntry = async function (key, value, universeId, datastoreNam
 exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "global", pageToken = null) {
   try {
     if (!universeId) throw new Error("Universe ID is required");
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     if (!datastoreName) throw new Error("Datastore name is required");
     const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries`);
     url.searchParams.set("maxPageSize", "20");
@@ -637,6 +673,8 @@ exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "
 exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, scope = "global") {
   try {
     if (!universeId) throw new Error("Universe ID is required");
+    const limited = checkLimit(universeId);
+    if (limited) return limited;
     if (!datastoreName) throw new Error("Datastore name is required");
     if (!key) throw new Error("Entry key is required");
     const encodedKey = encodeURIComponent(key);
@@ -736,9 +774,7 @@ function createSuccessResponse(additionalFields = {}) {
  * @param {Object} error - Error object
  */
 function logError(context, error) {
-  console.error(`[${context}] Status: ${error.response?.status}`);
-  console.error(`[${context}] Data:`, error.response?.data);
-  console.error(`[${context}] Message:`, error.message);
+  log.error(`[${context}] Status: ${error.response?.status} — ${error.message}`);
 }
 
 /**
@@ -809,7 +845,7 @@ exports.GetUniverseName = async function (universeId) {
           icon = iconResponse.data.data[0].imageUrl || null;
         }
       } catch (iconError) {
-        console.error(`[DEBUG] Failed to fetch icon:`, iconError.message);
+        log.debug("Failed to fetch icon:", iconError.message);
       }
       
       return {

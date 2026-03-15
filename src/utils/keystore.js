@@ -9,6 +9,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const log = require("./logger");
 
 const KEYSTORE_DIR = path.join(__dirname, "..", "..", "data");
 const KEYSTORE_PATH = path.join(KEYSTORE_DIR, "keystore.enc");
@@ -100,14 +101,12 @@ function loadKeystore() {
   deriveKey();
 
   if (!_enabled) {
-    console.log(
-      "[KEYSTORE] No ENCRYPTION_KEY configured — running in memory-only mode"
-    );
+    log.info("No ENCRYPTION_KEY configured — running in memory-only mode");
     return {};
   }
 
   if (!fs.existsSync(KEYSTORE_PATH)) {
-    console.log("[KEYSTORE] No existing keystore found — starting fresh");
+    log.info("No existing keystore found — starting fresh");
     return {};
   }
 
@@ -116,9 +115,7 @@ function loadKeystore() {
     const plaintext = decrypt(raw);
 
     if (plaintext === null) {
-      console.warn(
-        "[KEYSTORE] Failed to decrypt keystore — master key may have changed. Backing up and starting fresh."
-      );
+      log.warn("Failed to decrypt keystore — master key may have changed. Backing up and starting fresh.");
       try {
         fs.renameSync(KEYSTORE_PATH, KEYSTORE_BAK);
       } catch {
@@ -129,12 +126,10 @@ function loadKeystore() {
 
     const data = JSON.parse(plaintext);
     const keyCount = data.apiKeys ? Object.keys(data.apiKeys).length : 0;
-    console.log(
-      `[KEYSTORE] Loaded ${keyCount} API key(s) from encrypted storage`
-    );
+    log.info(`Loaded ${keyCount} API key(s) from encrypted storage`);
     return data;
   } catch (err) {
-    console.error("[KEYSTORE] Error reading keystore:", err.message);
+    log.error("Error reading keystore:", err.message);
     return {};
   }
 }
@@ -159,7 +154,7 @@ function saveKeystore(data) {
     fs.renameSync(KEYSTORE_TMP, KEYSTORE_PATH);
     return true;
   } catch (err) {
-    console.error("[KEYSTORE] Error writing keystore:", err.message);
+    log.error("Error writing keystore:", err.message);
     return false;
   }
 }

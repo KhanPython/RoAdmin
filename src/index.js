@@ -12,6 +12,7 @@ const { handleMessage } = require("./nlpHandler");
 
 const apiCache = require("./utils/apiCache");
 const llmCache = require("./utils/llmCache");
+const log = require("./utils/logger");
 
 // Load persisted API keys and universe names from encrypted keystore
 const { llmKey } = apiCache.loadFromDisk(() => llmCache.getLlmKey());
@@ -22,7 +23,7 @@ if (llmKey) {
 const discordToken = process.env.DISCORD_TOKEN;
 
 if (!discordToken) {
-    console.error("❌ Discord Token is undefined! Check your .env file or GitHub Secrets.");
+    log.error("Discord Token is undefined! Check your .env file or GitHub Secrets.");
 }
 
 const client = new discord.Client({
@@ -38,7 +39,7 @@ client.once("ready", async () => {
   try {
     // Clear all global commands
     await client.application?.commands.set([]);
-    console.log("Cleared all global commands");
+    log.info("Cleared all global commands");
 
     // Now load new commands
     new wokcommands(client, {
@@ -77,9 +78,9 @@ client.once("ready", async () => {
       }
     }
 
-    console.log("Bot is ready to use [test]!");
+    log.info("Bot is ready to use!");
   } catch (error) {
-    console.error("Error:", error);
+    log.error("Startup error:", error.message);
   }
 });
 
@@ -115,12 +116,17 @@ client.on("interactionCreate", async (interaction) => {
       });
     } catch (err) {
       llmCache.setLlmKey(null);
+      const safeReason =
+        err.status === 401 ? "The API key was rejected by Anthropic (invalid or revoked)." :
+        err.status === 429 ? "Anthropic rate limit reached. Please wait a moment and try again." :
+        err.status >= 500 ? "Anthropic's servers are temporarily unavailable. Try again later." :
+        "The API key could not be validated. Please check the key and try again.";
       await interaction.editReply({
         embeds: [
           new EmbedBuilder()
-            .setTitle("❌ Invalid API Key")
+            .setTitle("Invalid API Key")
             .setColor(0xff0000)
-            .setDescription(`The key could not be validated: ${err.message}`)
+            .setDescription(safeReason)
             .setTimestamp(),
         ],
       });
@@ -185,7 +191,7 @@ client.on("interactionCreate", async (interaction) => {
       universeInfo = await openCloud.GetUniverseName(universeId);
       openCloud.setUniverseName(universeId, universeInfo.name);
     } catch (verifyError) {
-      console.error("Universe verification failed:", verifyError.message);
+      log.warn("Universe verification failed:", verifyError.message);
       universeInfo = { name: `Universe ${universeId}`, icon: null };
     }
 

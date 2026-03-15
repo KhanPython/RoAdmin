@@ -108,9 +108,11 @@ RoAdmin/
 │   │   ├── listleaderboard.js
 │   │   └── removeFromBoard.js
 │   └── utils/
-│       ├── apiCache.js       # API key cache with encrypted persistence (via keystore.js)
+│       ├── apiCache.js       # API key cache with encrypted persistence + consent management
 │       ├── keystore.js       # AES-256-GCM encrypted file I/O for persisting keys
 │       ├── llmCache.js       # Anthropic API key cache (co-persisted in keystore)
+│       ├── logger.js         # Structured logger with LOG_LEVEL gating
+│       ├── rateLimiter.js    # Sliding window rate limiter (per-universe)
 │       └── universeUtils.js  # Universe ID validation helpers
 ├── .github/workflows/
 │   └── deploy.yml            # CI/CD: SSH deploy to GCP VM on push to master
@@ -159,6 +161,10 @@ No test framework is configured (`npm test` is a stub). There are no test files 
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `ENCRYPTION_KEY` | No | 64-char hex string (32 bytes) for AES-256-GCM encryption of persisted API keys. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. If omitted, the bot falls back to memory-only mode (keys lost on restart). |
+| `NODE_ENV` | No | Set to `"production"` on the GCP VM. Controls default log level. |
+| `LOG_LEVEL` | No | `"debug"`, `"info"`, `"warn"`, or `"error"`. Defaults to `"info"` when `NODE_ENV=production`, `"debug"` otherwise. |
+| `RATE_LIMIT_MAX` | No | Max Roblox API requests per universe per window (default: 50). |
+| `RATE_LIMIT_WINDOW_MS` | No | Rate limit window in ms (default: 60000). |
 
 Per-universe Roblox API keys are set at runtime via `/setapikey`. When `ENCRYPTION_KEY` is configured, keys are encrypted and persisted to `data/keystore.enc` — they survive bot restarts. Without `ENCRYPTION_KEY`, keys are held in memory only and cleared on restart.
 
@@ -239,6 +245,30 @@ Discord embeds have strict character limits. When displaying datastore values or
 | `/showData` | Player Data | `key`, `universeid`, `datastorename` |
 | `/listleaderboard` | Debugging | `leaderboardname`, `universeid`, `scope` (opt) |
 | `/removeFromBoard` | Moderation | `userid`, `leaderboardname`, `universeid`, `key` (opt) |
+| `/forgetme` | Privacy | `scope` (opt: `"personal"` or `"server"`) |
+
+---
+
+## Privacy & Data Consent
+
+### Data Processing Consent
+
+The first time a server administrator mentions the bot with a natural language command, the bot displays a consent embed explaining that message text will be sent to Anthropic for processing. An administrator must click "Accept" before NLP commands work for that guild. Consent status is persisted in the encrypted keystore alongside API keys.
+
+### `/forgetme` Command
+
+Allows administrators to delete data the bot holds:
+
+- **Personal scope** (default): Deletes the calling user's NLP command history across all channels.
+- **Server scope**: Wipes all API keys, the LLM key, data processing consent for the guild, and all command history for the server's channels. Requires confirmation via button click.
+
+### Rate Limiting
+
+All Roblox API calls pass through a sliding-window rate limiter (`src/utils/rateLimiter.js`). Default: 50 requests per 60 seconds per universe. If the limit is exceeded the command returns an error without making the API call. Configurable via `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` env vars.
+
+### Structured Logging
+
+All log output goes through `src/utils/logger.js` which gates by `LOG_LEVEL`. In production (`NODE_ENV=production`), debug output is suppressed — no response data, request URLs, or other potentially sensitive information is logged.
 
 ---
 
@@ -270,9 +300,11 @@ Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCO
 
 ## What to Avoid
 
-- Do not persist API keys to disk or logs - they live only in memory.
+- Do not log API keys, raw response data, or user-identifiable information. Use `log.debug()` for development-only output that is suppressed in production.
+- Do not use `console.log` / `console.error` directly — use the `log` utility from `src/utils/logger.js`.
 - Do not skip `deferReply` before async operations; Discord invalidates interactions after 3 seconds.
 - Do not use `reply` after `deferReply`; use `editReply` instead.
 - Do not add a database dependency - the design intentionally uses Roblox DataStores as the sole persistence layer.
 - Do not push to `master` when working on a feature; use a feature branch.
 - Do not expose raw error objects in Discord messages - format them into readable embed fields.
+- Do not send user data to external APIs without checking `apiCache.hasConsent(guildId)` first.

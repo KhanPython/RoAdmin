@@ -18,6 +18,7 @@ const {
 
 const openCloud = require("./openCloudAPI");
 const apiCache = require("./utils/apiCache");
+const log = require("./utils/logger");
 const llmCache = require("./utils/llmCache");
 const { processCommand, patchDatastoreValue } = require("./llmProcessor");
 const { sendPaginatedList } = require("./utils/pagination");
@@ -64,6 +65,41 @@ function pushHistory(channelId, userId, action, parameters) {
 
 function getHistory(channelId, userId) {
   return commandHistory.get(`${channelId}:${userId}`) || [];
+}
+
+/**
+ * Delete all command history entries for a specific user.
+ * @param {string} userId
+ * @returns {number} Number of entries deleted
+ */
+function clearUserHistory(userId) {
+  let count = 0;
+  const suffix = `:${userId}`;
+  for (const [key, entries] of commandHistory) {
+    if (key.endsWith(suffix)) {
+      count += entries.length;
+      commandHistory.delete(key);
+    }
+  }
+  return count;
+}
+
+/**
+ * Delete all command history entries for a set of channel IDs.
+ * @param {string[]} channelIds
+ * @returns {number} Number of entries deleted
+ */
+function clearChannelHistories(channelIds) {
+  let count = 0;
+  const channelSet = new Set(channelIds.map(String));
+  for (const [key, entries] of commandHistory) {
+    const channelId = key.split(":")[0];
+    if (channelSet.has(channelId)) {
+      count += entries.length;
+      commandHistory.delete(key);
+    }
+  }
+  return count;
 }
 
 // ── Universe info cache (iconUrl + name, keyed by universeId) ───────────
@@ -148,6 +184,77 @@ async function handleMessage(client, message) {
     return;
   }
 
+  // ── Data processing consent gate ────────────────────────────────────────
+  if (message.guild && !apiCache.hasConsent(message.guild.id)) {
+    const consentEmbed = new EmbedBuilder()
+      .setTitle("Data Processing Consent Required")
+      .setDescription(
+        "To use natural language commands, this bot sends your message text to **Anthropic (Claude AI)** for processing.\n\n" +
+        "**What is shared with Anthropic:**\n" +
+        "\u2022 Your message text (the command you type)\n" +
+        "\u2022 Recent command history for context\n\n" +
+        "**What is shared with Roblox:**\n" +
+        "\u2022 Your Discord user ID is attached to ban actions as an audit trail\n\n" +
+        "**What is NOT shared:**\n" +
+        "\u2022 Your Discord username\n" +
+        "\u2022 API keys or credentials\n\n" +
+        "**Data retention:**\n" +
+        "\u2022 Command history is stored in memory only and cleared on restart\n" +
+        "\u2022 You can delete all data at any time with `/forgetme`\n\n" +
+        "A server administrator must accept to enable NLP commands."
+      )
+      .setColor(0x5865f2)
+      .setFooter({ text: "Consent can be revoked at any time with /forgetme" })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("consent_accept")
+        .setLabel("Accept")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("consent_decline")
+        .setLabel("Decline")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    const consentReply = await message.reply({ embeds: [consentEmbed], components: [row] });
+    const consentCollector = consentReply.createMessageComponentCollector({ time: 120_000 });
+
+    consentCollector.on("collect", async (ci) => {
+      if (!ci.member?.permissions.has("Administrator")) {
+        await ci.reply({ content: "Only an administrator can accept data processing consent.", ephemeral: true });
+        return;
+      }
+      consentCollector.stop("handled");
+
+      if (ci.customId === "consent_accept") {
+        apiCache.setConsent(message.guild.id, ci.user.id);
+        await ci.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("Consent Accepted")
+              .setDescription("NLP commands are now enabled for this server. Please re-send your command.")
+              .setColor(0x00ff00)
+              .setTimestamp(),
+          ],
+          components: [],
+        });
+      } else {
+        await ci.update({
+          content: "Consent declined. NLP commands will not be available. Slash commands (e.g. `/ban`, `/showData`) still work normally.",
+          embeds: [],
+          components: [],
+        });
+      }
+    });
+
+    consentCollector.on("end", (_, reason) => {
+      if (reason === "time") consentReply.edit({ components: [] }).catch(() => {});
+    });
+    return;
+  }
+
   // ── Cooldown check ───────────────────────────────────────────────────────
   const now = Date.now();
   const last = lastCommandTime.get(message.author.id) ?? 0;
@@ -175,7 +282,7 @@ async function handleMessage(client, message) {
     const history = getHistory(message.channel.id, message.author.id);
     commands = await processCommand(textRaw, knownUniverses, history);
   } catch (err) {
-    console.error("[NLP] Unexpected error calling processCommand:", err);
+    log.error("Unexpected error calling processCommand:", err.message);
     await replyEmbed(message, "Processing Error", "Failed to process your request. Please try again.");
     return;
   }
@@ -191,7 +298,7 @@ async function handleMessage(client, message) {
   // Reject any action not in the known whitelist
   const invalidAction = commands.find(cmd => !ALLOWED_ACTIONS.has(cmd.action));
   if (invalidAction) {
-    console.warn(`[NLP] Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
+    log.warn(`Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
     await replyEmbed(message, "Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
     return;
   }
@@ -338,7 +445,7 @@ async function handleMessage(client, message) {
           : "Executed.",
       }).catch(() => {});
     } catch (err) {
-      console.error("[NLP] Error executing confirmed command:", err);
+      log.error("Error executing confirmed command:", err.message);
       await message.channel.send({
         embeds: [buildEmbed("Execution Error", `Something went wrong: ${err.message}`)],
       }).catch(() => {});
@@ -556,7 +663,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
         return buildErrorEmbed(`Action "${action}" is not recognised.`);
     }
   } catch (err) {
-    console.error(`[NLP] executeAction error (${action}):`, err);
+    log.error(`executeAction error (${action}):`, err.message);
     return buildErrorEmbed(err.message);
   }
 }
@@ -568,4 +675,4 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
  * @param {object[]} fields
  * @param {string} [footerText]
  */
-module.exports = { handleMessage, pushHistory };
+module.exports = { handleMessage, pushHistory, clearUserHistory, clearChannelHistories };
