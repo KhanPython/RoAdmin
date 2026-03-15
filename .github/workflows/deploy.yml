@@ -42,16 +42,13 @@ jobs:
             # 3. Install production dependencies (incremental — only installs what changed)
             npm install --omit=dev
 
-            # 4. Delete the old process entirely (ensures a true fresh start)
-            pm2 delete "$APP_NAME" 2>/dev/null || true
+            # 4. Kill the PM2 daemon entirely (clears stale process/log metadata)
+            pm2 kill 2>/dev/null || true
 
             # Ensure app-local log directory exists and is writable
             mkdir -p "$APP_DIR/logs"
 
-            # Flush logs via the daemon itself (daemon owns the files — no permission issues)
-            pm2 flush "$APP_NAME" 2>/dev/null || true
-
-            # 5. Start the bot fresh via ecosystem config
+            # 5. Start the bot fresh via ecosystem config (spawns a new daemon)
             pm2 start ecosystem.config.js
 
             # 6. Persist PM2 process list so the bot survives VM reboots
