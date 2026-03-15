@@ -27,11 +27,7 @@ jobs:
 
             export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.npm-global/bin:$PATH"
 
-            # 0. Fix ownership if the repo was previously cloned as root or another user.
-            #    This resolves both "dubious ownership" and "Permission denied" on .git files.
-            sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
-
-            # 1. Pull latest code (clean slate)
+            # 0. Pull latest code (clean slate)
             cd "$APP_DIR"
             git fetch --all
             git reset --hard origin/master
@@ -43,10 +39,10 @@ jobs:
             chmod 600 .env
 
             # 3. Clean install of production dependencies
-            npm ci --omit=dev
+            npm ci --omit=dev --prefer-offline
 
             # 4. Delete the old process entirely (ensures a true fresh start)
-            pm2 delete "$APP_NAME" 2>/dev/null || true
+            pm2 delete "$APP_NAME" --silent 2>/dev/null || true
 
             # Truncate log files so each deploy starts with a clean slate
             mkdir -p "$HOME/.pm2/logs"
