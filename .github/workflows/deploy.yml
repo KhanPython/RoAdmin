@@ -29,6 +29,7 @@ jobs:
 
             # 0. Pull latest code (clean slate)
             cd "$APP_DIR"
+            git config --global --add safe.directory "$APP_DIR"
             git fetch --all
             git reset --hard origin/master
             git clean -fd
@@ -54,3 +55,7 @@ jobs:
 
             # 6. Persist PM2 process list so the bot survives VM reboots
             pm2 save
+
+            # 7. Verify the process is actually running (fail the deploy if it crashed)
+            sleep 5
+            pm2 show "$APP_NAME"
