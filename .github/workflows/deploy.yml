@@ -42,7 +42,7 @@ jobs:
             npm install --omit=dev
 
             # 4. Delete the old process entirely (ensures a true fresh start)
-            pm2 delete "$APP_NAME" --silent 2>/dev/null || true
+            pm2 delete "$APP_NAME" 2>/dev/null || true
 
             # Truncate log files so each deploy starts with a clean slate
             mkdir -p "$HOME/.pm2/logs"
