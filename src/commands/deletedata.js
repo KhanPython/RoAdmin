@@ -70,7 +70,6 @@ module.exports = {
       }
       const universeInfo = universeCheck.universeInfo;
 
-      // ── Warning confirmation step ──────────────────────────────────────
       const warningEmbed = new EmbedBuilder()
         .setTitle("⚠️ Confirm Data Deletion")
         .setDescription(
@@ -117,7 +116,6 @@ module.exports = {
           return;
         }
 
-        // ── Confirmed - proceed with deletion ─────────────────────────────
         await i.update({ content: "Deleting…", embeds: [], components: [] });
 
         // Snapshot current value before deleting so it can be attached as a file

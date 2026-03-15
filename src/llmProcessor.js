@@ -1,8 +1,4 @@
-/**
- * LLM Command Processor
- * Uses the Anthropic API (claude-haiku) to parse natural language into
- * structured Roblox admin commands.
- */
+// LLM command processor — parses natural language into structured Roblox admin commands via Anthropic
 
 const Anthropic = require("@anthropic-ai/sdk");
 const llmCache = require("./utils/llmCache");
@@ -15,14 +11,7 @@ const FALLBACK = [{
   confirmation_summary: "Failed to parse command. Please try again.",
 }];
 
-/**
- * Parse a natural language message into one or more structured commands.
- *
- * @param {string} text - The user's message (mention already stripped)
- * @param {{ id: number, name: string }[]} knownUniverses - Cached universe name→ID mappings
- * @param {{ action: string, parameters: object, timestamp: string }[]} history - Recent commands in this channel
- * @returns {Promise<{ action: string|null, parameters: object, missing: string[], confirmation_summary: string }[]>}
- */
+// Parse a natural language message into one or more structured commands
 async function processCommand(text, knownUniverses = [], history = []) {
   const universeContext =
     knownUniverses.length > 0
@@ -108,15 +97,7 @@ ALWAYS return an array, even for a single command.`;
   }
 }
 
-/**
- * Given the current JSON value of a datastore entry and a natural language
- * description of what to change, return a patched copy of the object with
- * only the requested field(s) modified.
- *
- * @param {object} currentValue - The current datastore value (parsed JSON)
- * @param {string} instruction  - The user's change request (e.g. "set money to 500")
- * @returns {Promise<{ patched: object|null, summary: string }>}
- */
+// Patch specific field(s) in a datastore JSON object via LLM
 async function patchDatastoreValue(currentValue, instruction) {
   const systemPrompt = `You are a precise JSON editor. You will receive a JSON object and a natural language instruction describing which field(s) to change and to what value(s).
 

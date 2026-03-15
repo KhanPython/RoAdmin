@@ -1,10 +1,9 @@
 require('dotenv').config();
 
-//Polyfill for undici compatibility
+// Polyfill for undici compatibility
 const { ReadableStream } = require("node:stream/web");
 globalThis.ReadableStream = ReadableStream;
 
-//Modules
 const discord = require("discord.js");
 const wokcommands = require("wokcommands");
 const path = require("path");

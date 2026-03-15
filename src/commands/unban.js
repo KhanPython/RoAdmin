@@ -4,6 +4,7 @@ const apiCache = require("./../utils/apiCache");
 const universeUtils = require("./../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { buildUnbanEmbed, buildErrorEmbed } = require("../utils/formatters");
+const log = require("../utils/logger");
 
 module.exports = {
   category: "Moderation",
@@ -37,46 +38,39 @@ module.exports = {
     const userId = interaction?.options?.getNumber("userid") || parseInt(args[0]);
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
 
-    // Validate universeId
+    if (!userId || isNaN(userId)) {
+      return "Please provide a valid user ID.";
+    }
+
     if (!universeId || isNaN(universeId)) {
       return "Please provide a valid Universe ID.";
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     try {
-      // Check if API key is cached, if not prompt user
       if (!openCloud.hasApiKey(universeId)) {
-        await interaction.reply({
-          embeds: [apiCache.createMissingApiKeyEmbed(universeId)],
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
         return;
       }
 
-      // Verify universe exists
       const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
       if (!universeCheck.success) {
-        await interaction.reply({
-          content: universeCheck.errorMessage,
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.editReply({ content: universeCheck.errorMessage });
         return;
       }
       const universeInfo = universeCheck.universeInfo;
-      
-      // Call Open Cloud Unban function
+
       const response = await openCloud.UnbanUser(userId, universeId);
 
       if (response.success) {
         pushHistory(interaction.channelId, interaction.user.id, "unban", { userId, universeId });
       }
 
-      return buildUnbanEmbed(response, { userId, universeId }, universeInfo);
+      await interaction.editReply({ embeds: [buildUnbanEmbed(response, { userId, universeId }, universeInfo)] });
     } catch (error) {
-      console.error("Error in unban command:", error);
-      await interaction.reply({
-        embeds: [buildErrorEmbed(error.message)],
-        flags: MessageFlags.Ephemeral,
-      });
+      log.error("Error in unban command:", error.message);
+      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
     }
   },
 };

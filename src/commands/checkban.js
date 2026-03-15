@@ -4,6 +4,7 @@ const apiCache = require("./../utils/apiCache");
 const universeUtils = require("./../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { buildCheckBanEmbed, buildErrorEmbed } = require("../utils/formatters");
+const log = require("../utils/logger");
 
 module.exports = {
   category: "Moderation",
@@ -37,6 +38,10 @@ module.exports = {
     const userId = interaction?.options?.getNumber("userid") || parseInt(args[0]);
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
 
+    if (!userId || isNaN(userId)) {
+      return "Please provide a valid user ID.";
+    }
+
     if (!universeId || isNaN(universeId)) {
       return "Please provide a valid Universe ID.";
     }
@@ -62,7 +67,7 @@ module.exports = {
 
       await interaction.editReply({ embeds: [buildCheckBanEmbed(result, { userId, universeId }, universeInfo)] });
     } catch (error) {
-      console.error("Error in checkban command:", error);
+      log.error("Error in checkban command:", error.message);
       await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
     }
   },

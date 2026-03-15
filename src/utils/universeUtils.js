@@ -1,14 +1,5 @@
-/**
- * Universe Utilities
- * Helper functions for universe validation and management
- */
+// Universe ID validation helpers
 
-/**
- * Verify universe exists and return universe info
- * @param {Object} openCloud - The openCloud API module
- * @param {number} universeId - The Roblox universe ID
- * @returns {Promise<{success: boolean, universeInfo: Object|null, errorMessage: string|null}>}
- */
 async function verifyUniverseExists(openCloud, universeId) {
   try {
     const universeInfo = await openCloud.GetUniverseName(universeId);

@@ -1,3 +1,5 @@
+// Paginated embed list with button navigation
+
 "use strict";
 
 const {
@@ -7,29 +9,6 @@ const {
   ButtonStyle,
 } = require("discord.js");
 
-/**
- * Display a paginated list with ⏮ First / ◀ Prev / Next ▶ navigation.
- * Works for both channel messages (NLP) and interaction replies (slash commands).
- *
- * @param {object}   opts
- * @param {string}   opts.authorId        Discord user ID allowed to navigate
- * @param {string}   opts.title           Embed title
- * @param {string|null} opts.iconUrl      Optional thumbnail URL
- * @param {function(string|null): Promise<object>} opts.fetchPage
- *   Called with the page cursor (null = first page).
- *   Must return an object with { success, nextPageToken?, ... }.
- * @param {function(object, number): string} opts.formatEntries
- *   Called with (apiResult, 1-based page number). Returns embed description text.
- * @param {function(object): Promise<import('discord.js').Message>} opts.sendInitial
- *   Called with { embeds, components }. Must return a Message object.
- *   For slash commands: `(opts) => interaction.editReply(opts)` (after deferReply).
- *   For NLP / channel: `(opts) => channel.send(opts)`.
- * @param {function(object): Promise<any>} [opts.editFn]
- *   Optional override for editing the message on navigation.
- *   Required for ephemeral slash command messages (pass `interaction.editReply`).
- *   Defaults to `msg.edit`.
- * @param {number}   [opts.timeoutMs=120000]
- */
 async function sendPaginatedList({
   authorId,
   title,

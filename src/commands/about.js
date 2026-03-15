@@ -11,20 +11,19 @@ module.exports = {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const guild = interaction.guild;
-    const universeCount = apiCache.getCachedUniverseIds().length;
     const consentStatus = guild && apiCache.hasConsent(guild.id);
     const storageMode = keystore.isEnabled() ? "Encrypted at rest" : "Memory-only (session)";
     const uptime = formatUptime(client.uptime);
+    const app = client.application;
 
     const embed = new EmbedBuilder()
-      .setTitle("RoAdmin")
-      .setDescription("Roblox administration via Discord slash commands and natural language.")
+      .setTitle(app?.name || "Bot")
+      .setDescription(app?.description || "No description set.")
       .setColor(0x5865f2)
       .addFields(
         { name: "Version", value: "1.0.0", inline: true },
         { name: "Uptime", value: uptime, inline: true },
         { name: "Guilds", value: String(client.guilds.cache.size), inline: true },
-        { name: "Configured Universes", value: String(universeCount), inline: true },
         { name: "Credential Storage", value: storageMode, inline: true },
         { name: "NLP Consent", value: consentStatus ? "Accepted" : "Not accepted", inline: true },
         {

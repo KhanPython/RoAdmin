@@ -1,10 +1,4 @@
-/**
- * Encrypted Keystore
- * Handles AES-256-GCM encryption/decryption and atomic file I/O
- * for persisting API keys across bot restarts.
- *
- * If ENCRYPTION_KEY is not set, operates in memory-only mode (no persistence).
- */
+// Encrypted keystore — AES-256-GCM persistence for API keys (memory-only if ENCRYPTION_KEY unset)
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -23,15 +17,13 @@ const AUTH_TAG_LENGTH = 16;
 let _derivedKey = null;
 let _enabled = false;
 
-/**
- * Derive the data encryption key from the master secret using HKDF.
- * Called once on first use.
- */
+// Derive the data encryption key from the master secret using HKDF (called once)
 function deriveKey() {
   if (_derivedKey) return _derivedKey;
 
   const masterHex = process.env.ENCRYPTION_KEY;
-  if (!masterHex || masterHex.length !== 64) {
+  if (!masterHex || !/^[0-9a-fA-F]{64}$/.test(masterHex)) {
+    if (masterHex) log.error("ENCRYPTION_KEY is not a valid 64-character hex string");
     _enabled = false;
     return null;
   }
@@ -44,10 +36,7 @@ function deriveKey() {
   return _derivedKey;
 }
 
-/**
- * Encrypt a plaintext string with AES-256-GCM.
- * Returns a Buffer: [12B IV][16B auth tag][ciphertext]
- */
+// Encrypt plaintext with AES-256-GCM → [12B IV][16B tag][ciphertext]
 function encrypt(plaintext) {
   const key = deriveKey();
   if (!key) return null;
@@ -63,10 +52,7 @@ function encrypt(plaintext) {
   return Buffer.concat([iv, authTag, encrypted]);
 }
 
-/**
- * Decrypt a buffer produced by encrypt().
- * Returns the plaintext string, or null on failure.
- */
+// Decrypt a buffer produced by encrypt(), or null on failure
 function decrypt(buffer) {
   const key = deriveKey();
   if (!key) return null;
@@ -93,10 +79,7 @@ function decrypt(buffer) {
   }
 }
 
-/**
- * Load and decrypt the keystore from disk.
- * Returns the parsed object, or {} on first run / failure.
- */
+// Load and decrypt the keystore from disk (→ {} on first run / failure)
 function loadKeystore() {
   deriveKey();
 
@@ -134,11 +117,7 @@ function loadKeystore() {
   }
 }
 
-/**
- * Encrypt and atomically write the keystore to disk.
- * Writes to a .tmp file first, then renames for crash safety.
- * @returns {boolean} true if saved successfully (or persistence is disabled), false on write failure
- */
+// Encrypt and atomically write keystore to disk (write → tmp → rename)
 function saveKeystore(data) {
   deriveKey();
   if (!_enabled) return true; // not a failure — persistence just isn't configured
@@ -159,9 +138,6 @@ function saveKeystore(data) {
   }
 }
 
-/**
- * Whether encrypted persistence is active.
- */
 function isEnabled() {
   return _enabled;
 }

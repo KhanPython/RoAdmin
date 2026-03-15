@@ -1,10 +1,4 @@
-/**
- * Structured Logger
- * Gates log output by level. In production (NODE_ENV=production) only
- * info, warn, and error are emitted. Debug output is suppressed.
- *
- * Override with LOG_LEVEL env var: "debug", "info", "warn", "error".
- */
+// Structured logger — gates output by level (debug suppressed in production)
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 

@@ -1,19 +1,9 @@
+// Discord embed builders for all command result types
+
 "use strict";
 
 const { EmbedBuilder } = require("discord.js");
 
-// ─── Generic embed builders ────────────────────────────────────────────────
-
-/**
- * Build a result embed used by both slash commands and NLP.
- * @param {string} title
- * @param {{ success: boolean, status?: string }} result
- * @param {import('discord.js').EmbedField[]} fields
- * @param {string} [footerText]
- * @param {string|null} [iconUrl]
- * @param {string|null} [description]
- * @returns {EmbedBuilder}
- */
 function buildResultEmbed(title, result, fields = [], footerText = "", iconUrl = null, description = null) {
   const embed = new EmbedBuilder()
     .setTitle(title)
@@ -31,9 +21,6 @@ function buildResultEmbed(title, result, fields = [], footerText = "", iconUrl =
   return embed;
 }
 
-/**
- * Build a simple error embed.
- */
 function buildErrorEmbed(message) {
   return new EmbedBuilder()
     .setTitle("Error")
@@ -41,8 +28,6 @@ function buildErrorEmbed(message) {
     .setDescription(`Error: ${message}`)
     .setTimestamp();
 }
-
-// ─── Ban / Unban ────────────────────────────────────────────────────────────
 
 function buildBanEmbed(result, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo) {
   return buildResultEmbed(
@@ -79,8 +64,6 @@ function buildUnbanEmbed(result, { userId, universeId }, universeInfo) {
   );
 }
 
-// ─── Check Ban ──────────────────────────────────────────────────────────────
-
 function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
   const isActive = result.success && result.active;
   const fields = [
@@ -105,8 +88,6 @@ function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
   ).setColor(isActive ? 0xff0000 : 0x00ff00);
 }
 
-// ─── List Bans (paginated formatEntries callback) ───────────────────────────
-
 function formatBanEntries(data, page) {
   const bans = data.bans || [];
   if (!bans.length) return "No active bans.";
@@ -124,11 +105,7 @@ function formatBanEntries(data, page) {
   }).join("\n\n");
 }
 
-// ─── Show Data ──────────────────────────────────────────────────────────────
-
-/**
- * Format a JSON value into a code-block string safe for embed fields (≤1024).
- */
+// Format JSON into a code-block string safe for embed fields (≤1024 chars)
 function formatJsonValue(data) {
   if (data === null || data === undefined) return "No data";
   const pretty = JSON.stringify(data, null, 2);
@@ -159,8 +136,6 @@ function buildShowDataEmbed(result, { key, universeId, datastoreName }, universe
   );
 }
 
-// ─── Set Data ───────────────────────────────────────────────────────────────
-
 function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, scope }, universeInfo) {
   return buildResultEmbed(
     "Set Datastore Entry",
@@ -179,8 +154,6 @@ function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, s
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );
 }
-
-// ─── Update Data (field-level patch) ────────────────────────────────────────
 
 function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, oldValue, newValue, summary, scope, changedFields }, universeInfo) {
   let fields = [];
@@ -224,8 +197,6 @@ function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, o
   );
 }
 
-// ─── Delete Data ────────────────────────────────────────────────────────────
-
 function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope }, universeInfo) {
   return buildResultEmbed(
     "Delete Datastore Entry",
@@ -244,8 +215,6 @@ function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope },
   ).setColor(result.success ? 0xff6600 : 0xff0000);
 }
 
-// ─── Leaderboard (paginated formatEntries callback) ─────────────────────────
-
 function formatLeaderboardEntries(data, pageNum, { universeId, scope, universeName, entriesPerPage = 10 }) {
   const offset = (pageNum - 1) * entriesPerPage;
   const lines = (data.entries || [])
@@ -256,8 +225,6 @@ function formatLeaderboardEntries(data, pageNum, { universeId, scope, universeNa
     : `Universe: \`${universeId}\` | Scope: \`${scope}\``;
   return `${header}\n\n${lines || "No entries found."}`;
 }
-
-// ─── Remove from Board ──────────────────────────────────────────────────────
 
 function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName, key }, universeInfo) {
   return buildResultEmbed(
@@ -274,8 +241,6 @@ function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );
 }
-
-// ─── List Keys (paginated formatEntries callback) ───────────────────────────
 
 function formatKeyEntries(data, _pageNum, { universeId, scope }) {
   const keys = data.keys || [];

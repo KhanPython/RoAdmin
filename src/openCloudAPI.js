@@ -4,11 +4,9 @@ const apiCache = require("./utils/apiCache");
 const log = require("./utils/logger");
 const { robloxLimiter } = require("./utils/rateLimiter");
 
-// ── Rate limit gate ─────────────────────────────────────────────────────
-/**
- * Check the per-universe sliding window rate limit.
- * Returns an error response object if the limit is exceeded, or null if allowed.
- */
+axios.defaults.timeout = 10000;
+
+// Returns an error response if limit exceeded, or null if allowed
 function checkLimit(universeId) {
   const { allowed, retryAfter } = robloxLimiter.check(`universe:${universeId}`);
   if (!allowed) {
@@ -22,17 +20,6 @@ function checkLimit(universeId) {
   return null;
 }
 
-// ============================================
-// DATA STORE OPERATIONS
-// ============================================
-
-/**
- * Get a value from a datastore using a specific key
- * @param {string} key - The datastore entry key
- * @param {number} universeId - The Roblox universe ID (required)
- * @param {string} datastoreName - Name of the datastore
- * @returns {Promise<{success: boolean, data: any, status: string}>}
- */
 exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
   try {
     if (!universeId) {
@@ -138,13 +125,6 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
   }
 };
 
-/**
- * Get a value from the player currency datastore
- * @param {number} userId - The Roblox user ID
- * @param {number} universeId - The Roblox universe ID (required)
- * @param {string} datastoreName - Name of the datastore (default: "player_currency")
- * @returns {Promise<{success: boolean, data: any, status: string}>}
- */
 exports.GetPlayerData = async function (userId, universeId, datastoreName) {
   try {
     if (!universeId) {
@@ -181,14 +161,6 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName) {
   }
 };
 
-/**
- * Set a value in the player currency datastore
- * @param {number} userId - The Roblox user ID
- * @param {any} value - The data to store
- * @param {number} universeId - The Roblox universe ID (required)
- * @param {string} datastoreName - Name of the datastore
- * @returns {Promise<{success: boolean, status: string}>}
- */
 exports.SetPlayerData = async function (userId, value, universeId, datastoreName) {
   try {
     if (!universeId) {
@@ -223,13 +195,6 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
   }
 };
 
-/**
- * Increment a value in the datastore
- * @param {number} userId - The Roblox user ID
- * @param {number} amount - The amount to increment by
- * @param {string} datastoreName - Name of the datastore
- * @returns {Promise<{success: boolean, newValue: number, status: string}>}
- */
 exports.IncrementPlayerData = async function (userId, amount, datastoreName) {
   try {
     const datastore = DataStoreService.GetDataStore(datastoreName);
@@ -241,13 +206,6 @@ exports.IncrementPlayerData = async function (userId, amount, datastoreName) {
   }
 };
 
-/**
- * Update a value in the datastore using an update function
- * @param {number} userId - The Roblox user ID
- * @param {Function} updateFunction - Function that takes (data, keyInfo) and returns new data
- * @param {string} datastoreName - Name of the datastore
- * @returns {Promise<{success: boolean, newValue: any, status: string}>}
- */
 exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName) {
   try {
     const datastore = DataStoreService.GetDataStore(datastoreName);
@@ -259,12 +217,6 @@ exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName
   }
 };
 
-/**
- * Delete a value from the datastore
- * @param {number} userId - The Roblox user ID
- * @param {string} datastoreName - Name of the datastore
- * @returns {Promise<{success: boolean, oldValue: any, status: string}>}
- */
 exports.RemovePlayerData = async function (userId, datastoreName) {
   try {
     const datastore = DataStoreService.GetDataStore(datastoreName);
@@ -276,13 +228,6 @@ exports.RemovePlayerData = async function (userId, datastoreName) {
   }
 };
 
-/**
- * Remove data from an ordered datastore for a user
- * @param {number} userId - The Roblox user ID
- * @param {string} orderedDatastoreName - Name of the ordered datastore
- * @param {string} key - The key to remove (optional, defaults to {userId})
- * @returns {Promise<{success: boolean, status: string}>}
- */
 exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scopeId = "global", pageToken = null, universeId = null) {
   try {
     if (!universeId) {
@@ -364,13 +309,6 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
   }
 };
 
-/**
- * Check if a key exists in an ordered datastore (across all pages)
- * @param {string} keyToFind - The key/userId to search for
- * @param {string} orderedDatastoreName - Name of the ordered datastore
- * @param {string} scopeId - Scope ID (default: "global")
- * @returns {Promise<{exists: boolean, entry: Object|null, message: string}>}
- */
 exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreName, scopeId = "global", universeId = null) {
   try {
     let pageToken = null;
@@ -406,19 +344,6 @@ exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreNa
   }
 };
 
-// ============================================
-// USER RESTRICTIONS API (BAN MANAGEMENT)
-// ============================================
-
-
-/**
- * Ban a user using Roblox Open Cloud User Restrictions API (PATCH)
- * @param {number} userId - The Roblox user ID
- * @param {string} reason - Reason for the ban
- * @param {string} duration - Duration (e.g., "10d", "2h", "30m") or null for permanent
- * @param {boolean} excludeAltAccounts - Whether to ban alternate accounts (default: false)
- * @returns {Promise<{success: boolean, status: string, expiresDate: Date|null}>}
- */
 exports.BanUser = async function (userId, reason, duration, excludeAltAccounts = false, universeId = null, discordUserId = null) {
   try {
     if (!universeId) {
@@ -476,11 +401,6 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
   }
 };
 
-/**
- * Unban a user using Roblox Open Cloud User Restrictions API
- * @param {number} userId - The Roblox user ID
- * @returns {Promise<{success: boolean, status: string}>}
- */
 exports.UnbanUser = async function (userId, universeId = null) {
   try {
     if (!universeId) {
@@ -514,17 +434,6 @@ exports.UnbanUser = async function (userId, universeId = null) {
   }
 };
 
-
-// ============================================
-// BAN STATUS & LISTING
-// ============================================
-
-/**
- * Check the ban status of a specific user.
- * @param {number} userId
- * @param {number} universeId
- * @returns {Promise<{success: boolean, active: boolean, reason: string|null, startTime: Date|null, expiresDate: Date|null, excludeAltAccounts: boolean, status: string}>}
- */
 exports.CheckBanStatus = async function (userId, universeId) {
   try {
     if (!universeId) throw new Error("Universe ID is required");
@@ -559,12 +468,6 @@ exports.CheckBanStatus = async function (userId, universeId) {
   }
 };
 
-/**
- * List active bans in a universe (paginated, 20 per page).
- * @param {number} universeId
- * @param {string|null} pageToken
- * @returns {Promise<{success: boolean, bans: object[], nextPageToken: string|null, status: string}>}
- */
 exports.ListBans = async function (universeId, pageToken = null) {
   try {
     if (!universeId) throw new Error("Universe ID is required");
@@ -589,20 +492,6 @@ exports.ListBans = async function (universeId, pageToken = null) {
   }
 };
 
-// ============================================
-// DATASTORE WRITE & DELETE
-// ============================================
-
-/**
- * Set (create or update) a standard datastore entry.
- * Attempts PATCH first; falls back to POST if the key doesn't exist yet.
- * @param {string} key
- * @param {any} value - Raw JS value to store
- * @param {number} universeId
- * @param {string} datastoreName
- * @param {string} [scope="global"]
- * @returns {Promise<{success: boolean, status: string}>}
- */
 exports.SetDataStoreEntry = async function (key, value, universeId, datastoreName, scope = "global") {
   try {
     if (!universeId) throw new Error("Universe ID is required");
@@ -631,14 +520,6 @@ exports.SetDataStoreEntry = async function (key, value, universeId, datastoreNam
   }
 };
 
-/**
- * List all keys in a standard datastore (paginated, 20 per page).
- * @param {number} universeId
- * @param {string} datastoreName
- * @param {string} [scope="global"]
- * @param {string|null} pageToken
- * @returns {Promise<{success: boolean, keys: string[], nextPageToken: string|null, status: string}>}
- */
 exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "global", pageToken = null) {
   try {
     if (!universeId) throw new Error("Universe ID is required");
@@ -662,14 +543,6 @@ exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "
   }
 };
 
-/**
- * Hard-delete a key from a standard datastore.
- * @param {string} key
- * @param {number} universeId
- * @param {string} datastoreName
- * @param {string} [scope="global"]
- * @returns {Promise<{success: boolean, status: string}>}
- */
 exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, scope = "global") {
   try {
     if (!universeId) throw new Error("Universe ID is required");
@@ -690,15 +563,6 @@ exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, s
   }
 };
 
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Get API headers with authentication
- * @param {number} universeId - The Roblox universe ID (required to get correct API key)
- * @returns {Object} Headers object with API key
- */
 function getApiHeaders(universeId) {
   const apiKey = apiCache.getApiKey(universeId);
   if (!apiKey) {
@@ -710,11 +574,6 @@ function getApiHeaders(universeId) {
   };
 }
 
-/**
- * Get HTTP error message from status code
- * @param {number} status - HTTP status code
- * @returns {string} Error message
- */
 function getHttpErrorMessage(status) {
   switch (status) {
     case 400:
@@ -740,13 +599,6 @@ function getHttpErrorMessage(status) {
   }
 }
 
-/**
- * Create a generic datastore error response
- * @param {string} operation - The operation being performed
- * @param {string} message - Error message
- * @param {Object} additionalFields - Additional fields to include
- * @returns {Object} Error response object
- */
 function createDataStoreErrorResponse(operation, message, additionalFields = {}) {
   return {
     success: false,
@@ -755,11 +607,6 @@ function createDataStoreErrorResponse(operation, message, additionalFields = {})
   };
 }
 
-/**
- * Create a generic success response
- * @param {Object} additionalFields - Additional fields to include
- * @returns {Object} Success response object
- */
 function createSuccessResponse(additionalFields = {}) {
   return {
     success: true,
@@ -768,20 +615,10 @@ function createSuccessResponse(additionalFields = {}) {
   };
 }
 
-/**
- * Log an error with context
- * @param {string} context - Context label
- * @param {Object} error - Error object
- */
 function logError(context, error) {
   log.error(`[${context}] Status: ${error.response?.status} — ${error.message}`);
 }
 
-/**
- * Parse duration string to seconds
- * @param {string} duration - Duration string (e.g., "7d", "2m", "1y" for days, months, years)
- * @returns {number} Duration in seconds, or null if invalid
- */
 function parseDuration(duration) {
   if (!duration) return null;
 
@@ -810,15 +647,6 @@ function parseDuration(duration) {
 
 exports.parseDuration = parseDuration;
 
-// ============================================
-// UNIVERSE/EXPERIENCE INFORMATION
-// ============================================
-
-/**
- * Get the experience name and icon from a universe ID
- * @param {number} universeId - The Roblox universe ID
- * @returns {Promise<{success: boolean, name: string, icon: string|null, status: string}>}
- */
 exports.GetUniverseName = async function (universeId) {
   try {
     if (!universeId) {
@@ -874,11 +702,6 @@ exports.GetUniverseName = async function (universeId) {
   }
 };
 
-// ============================================
-// API CACHE MANAGEMENT
-// ============================================
-
-// Export cache management functions
 exports.setApiKey = apiCache.setApiKey;
 exports.getApiKey = apiCache.getApiKey;
 exports.hasApiKey = apiCache.hasApiKey;

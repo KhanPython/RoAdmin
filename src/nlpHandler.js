@@ -1,13 +1,4 @@
-/**
- * Natural Language Processing Handler
- * Fires on messageCreate events. When the bot is @mentioned and the message
- * looks like a Roblox admin command, it calls Claude (Anthropic) to parse the
- * intent and presents a confirmation before executing.
- *
- * Visibility rules:
- *   - Confirmation / error replies are auto-deleted after the user acts or they expire.
- *   - Execution results are posted publicly and remain in the channel.
- */
+// NLP handler — parses @mention messages via Anthropic, shows confirmation, and executes commands
 
 const {
   EmbedBuilder,
@@ -51,7 +42,6 @@ const COMMAND_KEYWORDS = [
   "previous", "last", "same", "again", "undo",
 ];
 
-// ── Per-user-per-channel command history (last N commands) ───────────────
 const MAX_HISTORY = 20;
 const commandHistory = new Map(); // `${channelId}:${userId}` → [{ action, parameters, timestamp }]
 
@@ -67,11 +57,6 @@ function getHistory(channelId, userId) {
   return commandHistory.get(`${channelId}:${userId}`) || [];
 }
 
-/**
- * Delete all command history entries for a specific user.
- * @param {string} userId
- * @returns {number} Number of entries deleted
- */
 function clearUserHistory(userId) {
   let count = 0;
   const suffix = `:${userId}`;
@@ -84,11 +69,6 @@ function clearUserHistory(userId) {
   return count;
 }
 
-/**
- * Delete all command history entries for a set of channel IDs.
- * @param {string[]} channelIds
- * @returns {number} Number of entries deleted
- */
 function clearChannelHistories(channelIds) {
   let count = 0;
   const channelSet = new Set(channelIds.map(String));
@@ -102,24 +82,16 @@ function clearChannelHistories(channelIds) {
   return count;
 }
 
-// ── Universe info cache (iconUrl + name, keyed by universeId) ───────────
 const universeInfoMap = new Map();
 
-// ── Per-user NLP cooldown ─────────────────────────────────────────────────
 const COOLDOWN_MS = 3_000;
 const lastCommandTime = new Map(); // userId → timestamp
 
-// ── Safety constraints ────────────────────────────────────────────────────
 const ALLOWED_ACTIONS = new Set(["ban", "unban", "showData", "listLeaderboard", "removeFromBoard", "checkBan", "listBans", "setData", "updateData", "listKeys"]);
 const MAX_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 600; // ms between consecutive Roblox API calls in a batch
 
-/**
- * Merge consecutive updateData commands that target the same key+datastore+universe+scope
- * into a single command with a `fields` array. This collapses N separate
- * (fetch → patch → write) cycles into one, saving N-1 API round-trips.
- * All other commands (including single updateData) are also normalised to use `fields`.
- */
+// Merge consecutive updateData commands targeting the same entry into one operation
 function mergeConsecutiveUpdateData(commands) {
   const merged = [];
   for (const cmd of commands) {
@@ -161,13 +133,8 @@ async function replyEmbed(message, title, description, color) {
   return message.reply({ embeds: [buildEmbed(title, description, color)] });
 }
 
-/**
- * Main entry point - call from client.on('messageCreate', ...)
- * @param {import('discord.js').Client} client
- * @param {import('discord.js').Message} message
- */
+// Main entry point — call from client.on('messageCreate', ...)
 async function handleMessage(client, message) {
-  // ── Fast ignore conditions (zero cost) ──────────────────────────────────
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
 
@@ -178,13 +145,11 @@ async function handleMessage(client, message) {
   const looksLikeCommand = COMMAND_KEYWORDS.some(kw => textLower.includes(kw));
   if (!looksLikeCommand) return;
 
-  // ── Permission & setup checks ────────────────────────────────────────────
   if (!message.member?.permissions.has("Administrator")) {
     await replyEmbed(message, "Permission Denied", "You need **Administrator** permission to use this command.");
     return;
   }
 
-  // ── Data processing consent gate ────────────────────────────────────────
   if (message.guild && !apiCache.hasConsent(message.guild.id)) {
     const consentEmbed = new EmbedBuilder()
       .setTitle("Data Processing Consent Required")
@@ -255,7 +220,6 @@ async function handleMessage(client, message) {
     return;
   }
 
-  // ── Cooldown check ───────────────────────────────────────────────────────
   const now = Date.now();
   const last = lastCommandTime.get(message.author.id) ?? 0;
   const remaining = COOLDOWN_MS - (now - last);
@@ -275,7 +239,6 @@ async function handleMessage(client, message) {
     return;
   }
 
-  // ── LLM parsing ──────────────────────────────────────────────────────────
   let commands;
   try {
     const knownUniverses = apiCache.getCachedUniverses();
@@ -287,15 +250,11 @@ async function handleMessage(client, message) {
     return;
   }
 
-  // ── Validate all parsed commands ───────────────────────────────────────────
-  // If the first command has no action, the whole request was unrecognised
   if (!commands[0]?.action) {
     await replyEmbed(message, "Unrecognised Command", commands[0]?.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
     return;
   }
 
-  // ── Strict output validation (prompt injection defence) ──────────────────
-  // Reject any action not in the known whitelist
   const invalidAction = commands.find(cmd => !ALLOWED_ACTIONS.has(cmd.action));
   if (invalidAction) {
     log.warn(`Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
@@ -349,7 +308,6 @@ async function handleMessage(client, message) {
   const primaryIcon = universeInfoMap.values().next().value?.icon ?? null;
   const isBatch = commands.length > 1;
 
-  // ── Confirmation embed ────────────────────────────────────────────────────
   let confirmEmbed;
 
   if (isBatch) {
@@ -396,7 +354,6 @@ async function handleMessage(client, message) {
 
   const reply = await message.reply({ embeds: [confirmEmbed], components: [row] });
 
-  // ── Button collector ──────────────────────────────────────────────────────
   const collector = reply.createMessageComponentCollector({ time: 60_000 });
 
   collector.on("collect", async (i) => {
@@ -459,17 +416,7 @@ async function handleMessage(client, message) {
   });
 }
 
-/**
- * Execute a parsed action and return a result embed.
- * For paginated actions (listBans, listKeys) the message is sent directly
- * to the channel and null is returned.
- * @param {string} action
- * @param {object} params
- * @param {string|null} iconUrl
- * @param {import('discord.js').TextChannel} channel
- * @param {string} authorId
- * @returns {Promise<EmbedBuilder|null>}
- */
+// Execute a parsed action and return a result embed (null for paginated actions)
 async function executeAction(action, params, iconUrl, channel, authorId) {
   try {
     let result;
@@ -668,11 +615,4 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
   }
 }
 
-/**
- * Build a standard result embed.
- * @param {string} title
- * @param {{ success: boolean, status?: string }} result
- * @param {object[]} fields
- * @param {string} [footerText]
- */
 module.exports = { handleMessage, pushHistory, clearUserHistory, clearChannelHistories };

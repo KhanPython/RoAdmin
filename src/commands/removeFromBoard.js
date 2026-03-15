@@ -4,6 +4,7 @@ const apiCache = require("../utils/apiCache");
 const universeUtils = require("../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { buildRemoveFromBoardEmbed, buildErrorEmbed } = require("../utils/formatters");
+const log = require("../utils/logger");
 
 module.exports = {
   category: "Moderation",
@@ -61,28 +62,21 @@ module.exports = {
       return "Please provide a valid Universe ID.";
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     try {
-      // Check if API key is cached, if not prompt user
       if (!openCloud.hasApiKey(universeId)) {
-        await interaction.reply({
-          embeds: [apiCache.createMissingApiKeyEmbed(universeId)],
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
         return;
       }
 
-      // Verify universe exists
       const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
       if (!universeCheck.success) {
-        await interaction.reply({
-          content: universeCheck.errorMessage,
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction.editReply({ content: universeCheck.errorMessage });
         return;
       }
       const universeInfo = universeCheck.universeInfo;
       
-      // First check if the key exists in the datastore
       const keyToCheck = key || `${userId}`;
       const checkResult = await openCloud.CheckOrderedDataStoreKey(keyToCheck, leaderboardName, "global", universeId);
       
@@ -103,7 +97,8 @@ module.exports = {
           notFoundEmbed.setThumbnail(universeInfo.icon);
         }
         
-        return notFoundEmbed;
+        await interaction.editReply({ embeds: [notFoundEmbed] });
+        return;
       }
 
       // Key exists, proceed with removal
@@ -113,18 +108,10 @@ module.exports = {
         pushHistory(interaction.channelId, interaction.user.id, "removeFromBoard", { userId, leaderboardName, key, universeId });
       }
 
-      return buildRemoveFromBoardEmbed(response, { userId, universeId, leaderboardName, key }, universeInfo);
+      await interaction.editReply({ embeds: [buildRemoveFromBoardEmbed(response, { userId, universeId, leaderboardName, key }, universeInfo)] });
     } catch (error) {
-      await interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setTitle("Error")
-          .setColor(0xFF0000)
-          .setDescription("An unexpected error occurred")
-          .addFields({ name: "Error:", value: error.message })
-          .setTimestamp()
-        ],
-        flags: MessageFlags.Ephemeral,
-      });
+      log.error("Error in removeFromBoard command:", error.message);
+      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
     }
   },
 };
