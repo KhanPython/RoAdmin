@@ -46,7 +46,7 @@ module.exports = {
       .setCustomId("apikey_input")
       .setLabel("Roblox Open Cloud API Key")
       .setPlaceholder("Paste your API key here")
-      .setStyle(TextInputStyle.Short)
+      .setStyle(TextInputStyle.Paragraph)
       .setRequired(true)
       .setMinLength(1)
       .setMaxLength(256);
