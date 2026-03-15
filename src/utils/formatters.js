@@ -155,7 +155,7 @@ function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, s
   );
 }
 
-function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, oldValue, newValue, summary, scope, changedFields }, universeInfo) {
+function buildUpdateDataEmbed(result, { key, universeId, datastoreName, summary, scope }, universeInfo) {
   let fields = [];
   if (result.success) {
     fields.push(
@@ -163,28 +163,8 @@ function buildUpdateDataEmbed(result, { key, universeId, datastoreName, field, o
       { name: "Universe ID", value: `\`${universeId}\``, inline: true },
       { name: "Datastore", value: datastoreName, inline: true },
       { name: "Scope", value: scope || "global", inline: true },
+      { name: "Summary", value: summary, inline: false },
     );
-
-    if (changedFields && changedFields.length > 1) {
-      const maxFieldLen = Math.max(...changedFields.map(f => f.field.length));
-      const lines = changedFields.map(cf => {
-        const padded = cf.field.padEnd(maxFieldLen);
-        const before = String(cf.oldValue ?? "—");
-        const after  = String(cf.newValue);
-        return `${padded}  ${before} → ${after}`;
-      });
-      let block = lines.join("\n");
-      if (block.length > 990) block = block.slice(0, 990) + "\n…";
-      fields.push({ name: "Changes", value: `\`\`\`\n${block}\n\`\`\``, inline: false });
-    } else {
-      // Single field
-      fields.push(
-        { name: "Field", value: String(field), inline: true },
-        { name: "Old → New", value: `${formatJsonValue(oldValue ?? "undefined")}\n→\n${formatJsonValue(newValue)}`, inline: false },
-      );
-    }
-
-    fields.push({ name: "Summary", value: summary, inline: false });
   }
 
   return buildResultEmbed(

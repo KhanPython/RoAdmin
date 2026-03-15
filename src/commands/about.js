@@ -36,7 +36,6 @@ module.exports = {
             "\u2022 Use `/forgetme` to delete all stored data at any time",
         }
       )
-      .setFooter({ text: "MIT License \u2022 github.com/KhanPython/RoAdmin" })
       .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });

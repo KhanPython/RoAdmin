@@ -288,6 +288,18 @@ async function handleMessage(client, message) {
     return;
   }
 
+  // Send thinking indicator immediately before the slow LLM call
+  const thinkingEmbed = new EmbedBuilder()
+    .setTitle("Processing...")
+    .setDescription("Analyzing your request. This may take a moment.")
+    .setColor(0x5865f2)
+    .setTimestamp();
+  const thinkingReply = await message.reply({ embeds: [thinkingEmbed] });
+
+  const editThinkingError = async (title, description, color = 0xff0000) => {
+    return thinkingReply.edit({ embeds: [buildEmbed(title, description, color)], components: [] });
+  };
+
   let commands;
   try {
     const knownUniverses = apiCache.getCachedUniverses();
@@ -295,25 +307,25 @@ async function handleMessage(client, message) {
     commands = await processCommand(textRaw, knownUniverses, history);
   } catch (err) {
     log.error("Unexpected error calling processCommand:", err.message);
-    await replyEmbed(message, "Processing Error", "Failed to process your request. Please try again.");
+    await editThinkingError("Processing Error", "Failed to process your request. Please try again.");
     return;
   }
 
   if (!commands[0]?.action) {
-    await replyEmbed(message, "Unrecognised Command", commands[0]?.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
+    await editThinkingError("Unrecognised Command", commands[0]?.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
     return;
   }
 
   const invalidAction = commands.find(cmd => !ALLOWED_ACTIONS.has(cmd.action));
   if (invalidAction) {
     log.warn(`Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
-    await replyEmbed(message, "Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
+    await editThinkingError("Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
     return;
   }
 
   // Reject batch sizes over the cap
   if (commands.length > MAX_BATCH_SIZE) {
-    await replyEmbed(message, "Too Many Commands", `Batch requests are limited to **${MAX_BATCH_SIZE} commands** at a time. Your request parsed ${commands.length}.`, 0xff0000);
+    await editThinkingError("Too Many Commands", `Batch requests are limited to **${MAX_BATCH_SIZE} commands** at a time. Your request parsed ${commands.length}.`, 0xff0000);
     return;
   }
 
@@ -321,7 +333,7 @@ async function handleMessage(client, message) {
   // updateData (field-level patches) ARE allowed to batch: execution is sequential so each
   // write fetches the already-patched value from the previous step and chains correctly.
   if (commands.length > 1 && commands.some(cmd => cmd.action === "setData")) {
-    await replyEmbed(message, "Cannot Batch Data Writes", "`setData` commands must be executed one at a time to avoid overwriting data.", 0xff0000);
+    await editThinkingError("Cannot Batch Data Writes", "`setData` commands must be executed one at a time to avoid overwriting data.", 0xff0000);
     return;
   }
 
@@ -330,14 +342,14 @@ async function handleMessage(client, message) {
     cmd => cmd.parameters.universeId && !apiCache.hasApiKey(cmd.parameters.universeId)
   );
   if (unconfiguredUniverse) {
-    await replyEmbed(message, "Unknown Universe", `Universe **${unconfiguredUniverse.parameters.universeId}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
+    await editThinkingError("Unknown Universe", `Universe **${unconfiguredUniverse.parameters.universeId}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
     return;
   }
 
   // Collect all missing params across commands
   const allMissing = [...new Set(commands.flatMap(cmd => cmd.missing))];
   if (allMissing.length > 0) {
-    await replyEmbed(message, "Missing Information", `I need more details to proceed:\n**${allMissing.join(", ")}**`, 0xffa500);
+    await editThinkingError("Missing Information", `I need more details to proceed:\n**${allMissing.join(", ")}**`, 0xffa500);
     return;
   }
 
@@ -401,7 +413,8 @@ async function handleMessage(client, message) {
       .setStyle(ButtonStyle.Danger)
   );
 
-  const reply = await message.reply({ embeds: [confirmEmbed], components: [row] });
+  await thinkingReply.edit({ embeds: [confirmEmbed], components: [row] });
+  const reply = thinkingReply;
 
   const collector = reply.createMessageComponentCollector({ time: 60_000 });
 
@@ -595,7 +608,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
         const instruction = params.fields
           .map(f => `Set the field "${f.field}" to ${f.newValue}`)
           .join(". ");
-        const { patched, summary, oldValue: patchedOldValue } = await patchDatastoreValue(currentValue, instruction);
+        const { patched, summary } = await patchDatastoreValue(currentValue, instruction);
         if (!patched) {
           return buildErrorEmbed(`Could not apply update: ${summary}`);
         }
@@ -609,38 +622,12 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           params.scope || "global"
         );
 
-        if (params.fields.length === 1) {
-          const f = params.fields[0];
-          const resolvedFieldKey = Object.keys(currentValue).find(
-            k => k.toLowerCase() === f.field.toLowerCase()
-          ) ?? f.field;
-          return buildUpdateDataEmbed(result, {
-            key: params.key,
-            universeId: params.universeId,
-            datastoreName: params.datastoreName,
-            field: resolvedFieldKey,
-            oldValue: patchedOldValue !== undefined ? patchedOldValue : currentValue[resolvedFieldKey],
-            newValue: f.newValue,
-            summary,
-            scope: params.scope || "global",
-          }, universeInfo);
-        }
-
-        // Multi-field: build a changedFields array so each field gets its own row in the embed
-        const changedFields = params.fields.map(f => {
-          const k = Object.keys(currentValue).find(k2 => k2.toLowerCase() === f.field.toLowerCase()) ?? f.field;
-          return { field: k, oldValue: currentValue[k], newValue: f.newValue };
-        });
         return buildUpdateDataEmbed(result, {
           key: params.key,
           universeId: params.universeId,
           datastoreName: params.datastoreName,
-          field: changedFields.map(f => f.field).join(", "),
-          oldValue: null,
-          newValue: null,
           summary,
           scope: params.scope || "global",
-          changedFields,
         }, universeInfo);
       }
 
