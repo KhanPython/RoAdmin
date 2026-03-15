@@ -1,3 +1,5 @@
+const path = require("path");
+
 module.exports = {
   apps: [
     {
@@ -11,8 +13,8 @@ module.exports = {
       max_restarts: 5,
       time: true,
       merge_logs: true,
-      out_file: "logs/RoAdmin-out.log",
-      error_file: "logs/RoAdmin-error.log",
+      out_file: path.join(__dirname, "logs", "RoAdmin-out.log"),
+      error_file: path.join(__dirname, "logs", "RoAdmin-error.log"),
       env: {
         NODE_ENV: "production",
       },
