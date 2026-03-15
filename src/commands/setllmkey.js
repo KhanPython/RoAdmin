@@ -3,7 +3,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder,
+  LabelBuilder,
 } = require("discord.js");
 
 module.exports = {
@@ -23,16 +23,19 @@ module.exports = {
       .setCustomId("setllmkey_modal")
       .setTitle("Enter LLM API Key");
 
-    const apiKeyInput = new TextInputBuilder()
-      .setCustomId("llmkey_input")
+    const apiKeyInput = new LabelBuilder()
       .setLabel("Anthropic API Key")
-      .setPlaceholder("sk-ant-...")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMinLength(1)
-      .setMaxLength(256);
+      .setTextInputComponent(
+        new TextInputBuilder()
+          .setCustomId("llmkey_input")
+          .setPlaceholder("sk-ant-...")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMinLength(1)
+          .setMaxLength(256),
+      );
 
-    modal.addComponents(new ActionRowBuilder().addComponents(apiKeyInput));
+    modal.addLabelComponents(apiKeyInput);
 
     await interaction.showModal(modal);
   },

@@ -4,7 +4,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder,
+  LabelBuilder,
 } = require("discord.js");
 
 module.exports = {
@@ -42,16 +42,19 @@ module.exports = {
       .setCustomId(`setapikey_modal_${universeId}`)
       .setTitle("Enter API Key");
 
-    const apiKeyInput = new TextInputBuilder()
-      .setCustomId("apikey_input")
+    const apiKeyInput = new LabelBuilder()
       .setLabel("Roblox Open Cloud API Key")
-      .setPlaceholder("Paste your API key here")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true)
-      .setMinLength(1)
-      .setMaxLength(256);
+      .setTextInputComponent(
+        new TextInputBuilder()
+          .setCustomId("apikey_input")
+          .setPlaceholder("Paste your API key here")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMinLength(1)
+          .setMaxLength(1000),
+      );
 
-    modal.addComponents(new ActionRowBuilder().addComponents(apiKeyInput));
+    modal.addLabelComponents(apiKeyInput);
 
     await interaction.showModal(modal);
   },
