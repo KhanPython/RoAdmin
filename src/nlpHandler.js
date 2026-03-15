@@ -432,7 +432,12 @@ async function handleMessage(client, message) {
       const processingDesc = isBatch
         ? `Executing ${commands.length} commands…`
         : "Executing command…";
-      await i.update({ embeds: [buildProcessingEmbed(processingDesc)], components: [] });
+      const processingEmbed = EmbedBuilder.from(i.message.embeds[0])
+        .setTitle("Processing...")
+        .setDescription(processingDesc)
+        .setColor(0x5865f2)
+        .setFooter(null);
+      await i.update({ embeds: [processingEmbed], components: [] });
 
       const resultEmbeds = [];
       for (const cmd of commands) {

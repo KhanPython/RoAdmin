@@ -8,7 +8,6 @@ const {
 } = require("discord.js");
 
 const apiCache = require("../utils/apiCache");
-const { buildProcessingEmbed } = require("../utils/formatters");
 const llmCache = require("../utils/llmCache");
 const { clearUserHistory, clearChannelHistories } = require("../nlpHandler");
 
@@ -83,7 +82,11 @@ module.exports = {
         return;
       }
 
-      await i.update({ embeds: [buildProcessingEmbed("Removing stored data…")], components: [] });
+      const processingEmbed = EmbedBuilder.from(i.message.embeds[0])
+        .setTitle("Processing...")
+        .setDescription("Removing stored data…")
+        .setColor(0x5865f2);
+      await i.update({ embeds: [processingEmbed], components: [] });
 
       const deleted = [];
 
