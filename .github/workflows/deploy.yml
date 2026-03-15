@@ -42,8 +42,10 @@ jobs:
             # 3. Install production dependencies (incremental — only installs what changed)
             npm install --omit=dev
 
-            # 4. Kill the PM2 daemon entirely (clears stale process/log metadata)
+            # 4. Kill the PM2 daemon entirely and wipe stale state
+            # (prior sudo/root runs leave ~/.pm2/ root-owned; daemon can't write logs there)
             pm2 kill 2>/dev/null || true
+            rm -rf "$HOME/.pm2"
 
             # Ensure app-local log directory exists and is writable
             mkdir -p "$APP_DIR/logs"
