@@ -25,9 +25,10 @@ jobs:
             # 1. Go to folder
             cd ~/RoAdmin
 
-            # 2. Pull changes (using absolute git path)
-            $GIT_PATH stash
-            $GIT_PATH pull origin master
+            # 2. Force the VM to match GitHub exactly
+            $GIT_PATH fetch --all
+            $GIT_PATH reset --hard origin/master
+            $GIT_PATH clean -fd  # This removes any untracked files/folders
 
             # 3. Update .env
             echo 'DISCORD_TOKEN="${{ secrets.DISCORD_TOKEN }}"' > .env
