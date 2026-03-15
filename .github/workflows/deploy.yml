@@ -38,7 +38,7 @@ jobs:
             git clean -fd
 
             # 2. Write .env — secrets passed as env vars, never interpolated into the script text
-            printf 'DISCORD_TOKEN=%s\nENCRYPTION_KEY=%s\nNODE_ENV=production\n' \
+            printf 'DISCORD_TOKEN=%s\nENCRYPTION_KEY=%s\nNODE_ENV=production\nNODE_OPTIONS=--unhandled-rejections=strict\n' \
               "$DISCORD_TOKEN" "$ENCRYPTION_KEY" > .env
             chmod 600 .env
 
@@ -57,7 +57,9 @@ jobs:
               --max-restarts 5 \
               --time \
               --output "$HOME/.pm2/logs/${APP_NAME}-out.log" \
-              --error  "$HOME/.pm2/logs/${APP_NAME}-error.log"
+              --error  "$HOME/.pm2/logs/${APP_NAME}-error.log" \
+              --node-args="--no-warnings" \
+              -- --unhandled-rejections=strict
 
             # 6. Persist PM2 process list so the bot survives VM reboots
             pm2 save

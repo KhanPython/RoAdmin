@@ -10,9 +10,14 @@ function resolveLevel() {
 
 const currentLevel = resolveLevel();
 
+function write(stream, prefix, args) {
+  const line = `${prefix} ${args.map(a => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ")}\n`;
+  stream.write(line);
+}
+
 module.exports = {
-  debug: (...args) => { if (currentLevel <= LOG_LEVELS.debug) console.log("[DEBUG]", ...args); },
-  info:  (...args) => { if (currentLevel <= LOG_LEVELS.info)  console.log("[INFO]", ...args); },
-  warn:  (...args) => { if (currentLevel <= LOG_LEVELS.warn)  console.warn("[WARN]", ...args); },
-  error: (...args) => { if (currentLevel <= LOG_LEVELS.error) console.error("[ERROR]", ...args); },
+  debug: (...args) => { if (currentLevel <= LOG_LEVELS.debug) write(process.stdout, "[DEBUG]", args); },
+  info:  (...args) => { if (currentLevel <= LOG_LEVELS.info)  write(process.stdout, "[INFO]",  args); },
+  warn:  (...args) => { if (currentLevel <= LOG_LEVELS.warn)  write(process.stderr, "[WARN]",  args); },
+  error: (...args) => { if (currentLevel <= LOG_LEVELS.error) write(process.stderr, "[ERROR]", args); },
 };
