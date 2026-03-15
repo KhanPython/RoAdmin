@@ -49,35 +49,6 @@ client.once("ready", async () => {
       botOwners: [],
     });
 
-    // Send startup status to each guild's system channel
-    const keystore = require("./utils/keystore");
-    const { EmbedBuilder } = require("discord.js");
-    const embed = keystore.isEnabled()
-      ? new EmbedBuilder()
-          .setTitle("Online — Secure Storage Active")
-          .setColor(0x00ff00)
-          .setDescription("Credentials restored from encrypted storage. All systems operational.")
-          .setTimestamp()
-      : new EmbedBuilder()
-          .setTitle("Online — Limited Security Mode")
-          .setColor(0xff9900)
-          .setDescription(
-            "Credentials are not being persisted. All API keys will need to be re-entered after a restart.\n\n" +
-            "Contact the bot administrator to enable encrypted credential storage."
-          )
-          .setTimestamp();
-
-    for (const guild of client.guilds.cache.values()) {
-      const channel = guild.systemChannel;
-      if (channel) {
-        try {
-          await channel.send({ embeds: [embed] });
-        } catch {
-          // Bot may not have permission to send in this channel
-        }
-      }
-    }
-
     log.info("Bot is ready to use!");
   } catch (error) {
     log.error("Startup error:", error.message);
