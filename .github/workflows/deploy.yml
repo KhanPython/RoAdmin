@@ -9,37 +9,48 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to Google Cloud VM
+      - name: Deploy to GCP VM via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
         with:
           host: ${{ secrets.REMOTE_HOST }}
           username: ${{ secrets.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: DISCORD_TOKEN,ENCRYPTION_KEY
           script: |
-            # 1. Setup Environment
-            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
-            source ~/.bashrc || source ~/.profile
+            set -euo pipefail
 
-            # Explicitly define paths again inside the shell to be 100% sure
-            PM2="/usr/local/bin/pm2"
-            GIT="/usr/bin/git"
-            NPM="/usr/bin/npm"
+            APP_DIR="/home/orazimbetov_jalaladdin1/RoAdmin"
+            APP_NAME="RoAdmin"
 
-            # 2. Sync Code
-            cd /home/orazimbetov_jalaladdin1/RoAdmin || exit 1
-            $GIT fetch --all
-            $GIT reset --hard origin/master
-            $GIT clean -fd
+            export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.npm-global/bin:$PATH"
 
-            # 3. Create .env
-            echo "DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\"" > .env
-            echo "ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
-            echo "NODE_ENV=\"production\"" >> .env
+            # 1. Pull latest code (clean slate)
+            cd "$APP_DIR"
+            git fetch --all
+            git reset --hard origin/master
+            git clean -fd
 
-            # 4. Install
-            $NPM install --production
+            # 2. Write .env — secrets passed as env vars, never interpolated into the script text
+            printf 'DISCORD_TOKEN=%s\nENCRYPTION_KEY=%s\nNODE_ENV=production\n' \
+              "$DISCORD_TOKEN" "$ENCRYPTION_KEY" > .env
+            chmod 600 .env
 
-            # 5. The "Fresh Start" Sequence
-            $PM2 delete RoAdmin || true
-            $PM2 start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
-            $PM2 save
+            # 3. Clean install of production dependencies
+            npm ci --omit=dev
+
+            # 4. Delete the old process entirely (ensures a true fresh start)
+            pm2 delete "$APP_NAME" 2>/dev/null || true
+
+            # 5. Start the bot fresh
+            pm2 start src/index.js \
+              --name "$APP_NAME" \
+              --cwd "$APP_DIR" \
+              --max-memory-restart 300M \
+              --restart-delay 3000 \
+              --max-restarts 5
+
+            # 6. Persist PM2 process list so the bot survives VM reboots
+            pm2 save
