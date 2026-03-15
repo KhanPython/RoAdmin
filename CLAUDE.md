@@ -64,6 +64,7 @@ This loop is how the framework improves over time.
 **Directory layout:**
 ```
 .tmp/           # Temporary files (scraped data, intermediate exports). Regenerated as needed.
+data/           # Encrypted keystore (keystore.enc) - persists API keys across restarts (gitignored)
 tools/          # Python scripts for deterministic execution
 workflows/      # Markdown SOPs defining what to do and how
 .env            # API keys and environment variables (NEVER store secrets anywhere else)
@@ -107,7 +108,9 @@ RoAdmin/
 │   │   ├── listleaderboard.js
 │   │   └── removeFromBoard.js
 │   └── utils/
-│       ├── apiCache.js       # In-memory API key store keyed by universeId
+│       ├── apiCache.js       # API key cache with encrypted persistence (via keystore.js)
+│       ├── keystore.js       # AES-256-GCM encrypted file I/O for persisting keys
+│       ├── llmCache.js       # Anthropic API key cache (co-persisted in keystore)
 │       └── universeUtils.js  # Universe ID validation helpers
 ├── .github/workflows/
 │   └── deploy.yml            # CI/CD: SSH deploy to GCP VM on push to master
@@ -155,8 +158,9 @@ No test framework is configured (`npm test` is a stub). There are no test files 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Discord bot token |
+| `ENCRYPTION_KEY` | No | 64-char hex string (32 bytes) for AES-256-GCM encryption of persisted API keys. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. If omitted, the bot falls back to memory-only mode (keys lost on restart). |
 
-Per-universe Roblox API keys are **not stored in .env**. They are set at runtime via the `/setapikey` Discord slash command and held in the in-memory cache (`src/utils/apiCache.js`). Keys are cleared when the bot restarts.
+Per-universe Roblox API keys are set at runtime via `/setapikey`. When `ENCRYPTION_KEY` is configured, keys are encrypted and persisted to `data/keystore.enc` — they survive bot restarts. Without `ENCRYPTION_KEY`, keys are held in memory only and cleared on restart.
 
 ---
 
@@ -204,17 +208,17 @@ All exported functions return a standardized response object:
 
 Callers must check `result.success` before using `result.data`. HTTP errors are caught and returned as `{ success: false, status: <code>, data: errorMessage }` - they are never thrown.
 
-### In-Memory API Key Cache (`src/utils/apiCache.js`)
+### API Key Cache (`src/utils/apiCache.js`)
 
 ```js
-// Store
-apiCache.set(universeId, apiKey);
+// Store (also persists to encrypted keystore if ENCRYPTION_KEY is set)
+apiCache.setApiKey(universeId, apiKey);
 
-// Retrieve
-const key = apiCache.get(universeId);
+// Retrieve (synchronous, reads from in-memory cache)
+const key = apiCache.getApiKey(universeId);
 ```
 
-Keys are only available for the life of the current process. The `/setapikey` command must be re-run after bot restarts.
+On startup, `apiCache.loadFromDisk()` loads all persisted keys and universe names into memory. All read functions remain synchronous. Mutating functions (`setApiKey`, `clearApiKey`, `setUniverseName`) automatically flush to the encrypted keystore.
 
 ### Embed Truncation
 
@@ -244,11 +248,11 @@ Discord embeds have strict character limits. When displaying datastore values or
 
 1. SSH into the GCP VM.
 2. `git stash && git pull origin master`
-3. Overwrite `.env` with `DISCORD_TOKEN` from GitHub Secrets.
+3. Overwrite `.env` with `DISCORD_TOKEN` and `ENCRYPTION_KEY` from GitHub Secrets.
 4. `npm install --production`
 5. `pm2 restart RoAdmin || pm2 start . --name RoAdmin && pm2 save`
 
-Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCORD_TOKEN`.
+Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCORD_TOKEN`, `ENCRYPTION_KEY`.
 
 **Do not push directly to `master`** unless deploying to production.
 

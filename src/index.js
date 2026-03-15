@@ -10,6 +10,15 @@ const wokcommands = require("wokcommands");
 const path = require("path");
 const { handleMessage } = require("./nlpHandler");
 
+const apiCache = require("./utils/apiCache");
+const llmCache = require("./utils/llmCache");
+
+// Load persisted API keys and universe names from encrypted keystore
+const { llmKey } = apiCache.loadFromDisk(() => llmCache.getLlmKey());
+if (llmKey) {
+  llmCache.hydrateLlmKey(llmKey);
+}
+
 const discordToken = process.env.DISCORD_TOKEN;
 
 if (!discordToken) {
@@ -30,7 +39,7 @@ client.once("ready", async () => {
     // Clear all global commands
     await client.application?.commands.set([]);
     console.log("Cleared all global commands");
-    
+
     // Now load new commands
     new wokcommands(client, {
       commandsDir: path.join(__dirname, "commands"),
@@ -39,6 +48,35 @@ client.once("ready", async () => {
       botOwners: [],
     });
 
+    // Send startup status to each guild's system channel
+    const keystore = require("./utils/keystore");
+    const { EmbedBuilder } = require("discord.js");
+    const embed = keystore.isEnabled()
+      ? new EmbedBuilder()
+          .setTitle("Online — Secure Storage Active")
+          .setColor(0x00ff00)
+          .setDescription("Credentials restored from encrypted storage. All systems operational.")
+          .setTimestamp()
+      : new EmbedBuilder()
+          .setTitle("Online — Limited Security Mode")
+          .setColor(0xff9900)
+          .setDescription(
+            "Credentials are not being persisted. All API keys will need to be re-entered after a restart.\n\n" +
+            "Contact the bot administrator to enable encrypted credential storage."
+          )
+          .setTimestamp();
+
+    for (const guild of client.guilds.cache.values()) {
+      const channel = guild.systemChannel;
+      if (channel) {
+        try {
+          await channel.send({ embeds: [embed] });
+        } catch {
+          // Bot may not have permission to send in this channel
+        }
+      }
+    }
+
     console.log("Bot is ready to use [test]!");
   } catch (error) {
     console.error("Error:", error);
@@ -46,5 +84,156 @@ client.once("ready", async () => {
 });
 
 client.on("messageCreate", (message) => handleMessage(client, message));
+
+// Modal submit handlers for credential commands
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isModalSubmit()) return;
+
+  if (interaction.customId === "setllmkey_modal") {
+    const { EmbedBuilder, MessageFlags } = require("discord.js");
+    const Anthropic = require("@anthropic-ai/sdk");
+    const keystore = require("./utils/keystore");
+
+    const apiKey = interaction.fields.getTextInputValue("llmkey_input");
+
+    if (!apiKey || apiKey.trim().length === 0) {
+      await interaction.reply({
+        content: "❌ Please provide a non-empty API key.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    try {
+      const anthropic = new Anthropic.default({ apiKey });
+      await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1,
+        messages: [{ role: "user", content: "test" }],
+      });
+    } catch (err) {
+      llmCache.setLlmKey(null);
+      await interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("❌ Invalid API Key")
+            .setColor(0xff0000)
+            .setDescription(`The key could not be validated: ${err.message}`)
+            .setTimestamp(),
+        ],
+      });
+      return;
+    }
+
+    const persisted = llmCache.setLlmKey(apiKey);
+    const diskFailed = keystore.isEnabled() && !persisted;
+
+    await interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(diskFailed ? "⚠️ Credential Storage Error" : "✅ LLM API Key Configured")
+          .setColor(diskFailed ? 0xff9900 : 0x00ff00)
+          .setDescription(
+            (diskFailed
+              ? "Anthropic API key is active but could not be written to secure storage. It will not persist across restarts.\n\n"
+              : keystore.isEnabled()
+                ? "Anthropic API key securely stored.\n\n"
+                : "Anthropic API key active for this session.\n\n") +
+            "Mention the bot in any channel to issue commands in plain English.\n" +
+            "Example: `@RoAdmin ban user 12345 for cheating in MyGame`"
+          )
+          .addFields({
+            name: "Storage",
+            value: diskFailed
+              ? "Contact the bot administrator to resolve the storage issue."
+              : keystore.isEnabled()
+                ? "Encrypted at rest · Persists across restarts"
+                : "Session-only · Will not persist across restarts",
+          })
+          .setTimestamp(),
+      ],
+    });
+    return;
+  }
+
+  if (!interaction.customId.startsWith("setapikey_modal_")) return;
+
+  const openCloud = require("./openCloudAPI");
+  const keystore = require("./utils/keystore");
+  const { EmbedBuilder, MessageFlags } = require("discord.js");
+
+  const universeId = Number(interaction.customId.replace("setapikey_modal_", ""));
+  const apiKey = interaction.fields.getTextInputValue("apikey_input");
+
+  if (!apiKey || apiKey.trim().length === 0) {
+    await interaction.reply({
+      content: "❌ Invalid API key. Please provide a non-empty key.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    const persisted = openCloud.setApiKey(universeId, apiKey);
+
+    let universeInfo;
+    try {
+      universeInfo = await openCloud.GetUniverseName(universeId);
+      openCloud.setUniverseName(universeId, universeInfo.name);
+    } catch (verifyError) {
+      console.error("Universe verification failed:", verifyError.message);
+      universeInfo = { name: `Universe ${universeId}`, icon: null };
+    }
+
+    try {
+      const axios = require("axios");
+      const testUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/dummy/scopes/global/entries/test`;
+      await axios.get(testUrl, {
+        headers: { "x-api-key": apiKey },
+        validateStatus: (status) => status !== 401 && status !== 403,
+      });
+    } catch (apiKeyError) {
+      openCloud.clearApiKey(universeId);
+      throw new Error("API key is invalid or unauthorized for this universe");
+    }
+
+    const diskFailed = keystore.isEnabled() && !persisted;
+
+    const embed = new EmbedBuilder()
+      .setTitle(diskFailed ? "⚠️ Credential Storage Error" : "API Key Configured")
+      .setColor(diskFailed ? 0xFF9900 : 0x00FF00)
+      .setDescription(
+        diskFailed
+          ? `Credential for universe \`${universeId}\` is active but could not be written to secure storage. It will not persist across restarts.`
+          : keystore.isEnabled()
+            ? `Credential for universe \`${universeId}\` has been securely stored.`
+            : `Credential for universe \`${universeId}\` is active for this session only.`
+      )
+      .addFields(
+        { name: "Universe ID:", value: `\`${universeId.toString()}\`` },
+        { name: "Experience:", value: universeInfo.name || "Unknown" }
+      )
+      .setFooter({
+        text: diskFailed
+          ? "Contact the bot administrator to resolve the storage issue."
+          : keystore.isEnabled()
+            ? "Encrypted at rest · Persists across restarts"
+            : "Session-only · Will not persist across restarts",
+      })
+      .setTimestamp();
+
+    if (universeInfo.icon) {
+      embed.setThumbnail(universeInfo.icon);
+    }
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    await interaction.editReply({ content: `❌ Error: ${error.message}` });
+  }
+});
 
 client.login(discordToken);

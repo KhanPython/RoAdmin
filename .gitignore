@@ -18,6 +18,11 @@ yarn.lock
 .DS_Store
 Thumbs.db
 
+# Encrypted keystore
+data/
+*.enc
+*.enc.bak
+
 # Logs
 logs/
 *.log

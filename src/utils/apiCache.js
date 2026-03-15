@@ -1,7 +1,8 @@
 /**
  * API Key Cache Manager
- * Stores API keys in memory for specific universes
- * Prompts user to enter API key if missing for a universe
+ * Stores API keys encrypted at rest and in memory for fast access.
+ * On startup, keys are loaded from the encrypted keystore.
+ * On mutation, the keystore is flushed to disk automatically.
  */
 
 // In-memory cache: { universeId: apiKey }
@@ -10,6 +11,48 @@ const apiKeyCache = {};
 // In-memory universe name cache: { universeId: universeName }
 const universeNameCache = {};
 const { MessageFlags } = require("discord.js");
+const keystore = require("./keystore");
+
+// Reference to the LLM key for co-persistence (set during loadFromDisk)
+let _llmKeyRef = null;
+let _llmKeyGetter = null;
+
+/**
+ * Serialize both caches + LLM key and write to encrypted keystore.
+ * @returns {boolean} true if saved successfully (or persistence disabled), false on disk write failure
+ */
+function persistToDisk() {
+  const data = {
+    apiKeys: { ...apiKeyCache },
+    universeNames: { ...universeNameCache },
+  };
+  if (_llmKeyGetter) {
+    const llmKey = _llmKeyGetter();
+    if (llmKey) data.llmKey = llmKey;
+  }
+  return keystore.saveKeystore(data);
+}
+
+/**
+ * Load keys and universe names from encrypted keystore into memory.
+ * Call once at startup, before the bot accepts commands.
+ * @param {Function} [llmKeyGetter] - Optional function that returns the current LLM key (for co-persistence)
+ * @returns {{ llmKey: string|null }} - Stored LLM key if present
+ */
+function loadFromDisk(llmKeyGetter) {
+  _llmKeyGetter = llmKeyGetter || null;
+
+  const data = keystore.loadKeystore();
+
+  if (data.apiKeys) {
+    Object.assign(apiKeyCache, data.apiKeys);
+  }
+  if (data.universeNames) {
+    Object.assign(universeNameCache, data.universeNames);
+  }
+
+  return { llmKey: data.llmKey || null };
+}
 
 /**
  * Get API key for a universe
@@ -22,12 +65,14 @@ function getApiKey(universeId) {
 }
 
 /**
- * Set API key for a universe in the cache
+ * Set API key for a universe in the cache and persist to disk
  * @param {number} universeId - The Roblox universe ID
  * @param {string} apiKey - The Roblox Open Cloud API key
+ * @returns {boolean} true if persisted to disk successfully
  */
 function setApiKey(universeId, apiKey) {
   apiKeyCache[universeId] = apiKey;
+  return persistToDisk();
 }
 
 /**
@@ -54,7 +99,7 @@ async function getOrPromptApiKey(interaction, universeId) {
 
   // Prompt user with ephemeral message
   const promptMessage = await interaction.followUp({
-    content: `🔑 **API Key Missing for Universe ${universeId}**\n\nPlease use the \`/setapikey\` command to store the API key for this universe.\n\`\`\`\n/setapikey <universeId> <apiKey>\n\`\`\`\n\nThe API key will be cached for this session only.`,
+    content: `🔑 **API Key Missing for Universe ${universeId}**\n\nPlease use the \`/setapikey\` command to store the API key for this universe.\n\`\`\`\n/setapikey <universeId> <apiKey>\n\`\`\``,
     flags: MessageFlags.Ephemeral,
   });
 
@@ -63,18 +108,20 @@ async function getOrPromptApiKey(interaction, universeId) {
 }
 
 /**
- * Clear API key from cache
+ * Clear API key from cache and persist
  * @param {number} universeId - The Roblox universe ID
  */
 function clearApiKey(universeId) {
   delete apiKeyCache[universeId];
+  persistToDisk();
 }
 
 /**
- * Clear all cached API keys
+ * Clear all cached API keys and persist
  */
 function clearAllApiKeys() {
   Object.keys(apiKeyCache).forEach(key => delete apiKeyCache[key]);
+  persistToDisk();
 }
 
 /**
@@ -92,26 +139,24 @@ function getCachedUniverseIds() {
  */
 function createMissingApiKeyEmbed(universeId) {
   const { EmbedBuilder } = require("discord.js");
-  
+
+  const isPersistent = keystore.isEnabled();
+
   return new EmbedBuilder()
-    .setTitle("🔑 API Key Missing")
+    .setTitle("API Key Required")
     .setColor(0xFF9900)
     .setDescription(
-      `No API key is currently cached for Universe \`${universeId}\`.\n\n` +
-      `Please use the \`/setapikey\` command to store the API key for this universe.`
+      `No credential is configured for Universe \`${universeId}\`.\n\n` +
+      `Use \`/setapikey\` to configure the API key for this universe.`
     )
     .addFields(
       {
-        name: "Important Security Notice",
+        name: "Security",
         value:
-          "• Never share your API key with others\n" +
-          "• The API key is stored in bot memory only\n" +
-          "• Keys will be lost when the bot restarts\n",
-        inline: false,
-      },
-      {
-        name: "Session Information",
-        value: "This API key will be cached for the current session only.",
+          "• Never share your API key with unauthorized users\n" +
+          (isPersistent
+            ? "• Credentials are encrypted at rest"
+            : "• Credentials are stored in memory only and will not persist across restarts"),
         inline: false,
       }
     )
@@ -124,7 +169,10 @@ function createMissingApiKeyEmbed(universeId) {
  * @param {string} name
  */
 function setUniverseName(universeId, name) {
-  if (name) universeNameCache[universeId] = name;
+  if (name) {
+    universeNameCache[universeId] = name;
+    persistToDisk();
+  }
 }
 
 /**
@@ -149,4 +197,6 @@ module.exports = {
   createMissingApiKeyEmbed,
   setUniverseName,
   getCachedUniverses,
+  loadFromDisk,
+  persistToDisk,
 };
