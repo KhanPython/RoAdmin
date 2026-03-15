@@ -96,11 +96,12 @@ function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
   ).setColor(isActive ? 0xff0000 : 0x00ff00);
 }
 
-function formatBanEntries(data, page) {
+function formatBanEntries(data, page, { universeName } = {}) {
   const bans = data.bans || [];
   if (!bans.length) return "No active bans.";
   const offset = (page - 1) * 10;
-  return bans.map((b, i) => {
+  const header = universeName ? `**Experience:** ${universeName}\n\n` : "";
+  return header + bans.map((b, i) => {
     const uid = b.user?.replace("users/", "") ?? "?";
     const r = b.gameJoinRestriction ?? {};
     const reason = r.displayReason || r.privateReason || "No reason";
@@ -230,11 +231,13 @@ function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName
   );
 }
 
-function formatKeyEntries(data, _pageNum, { universeId, scope }) {
+function formatKeyEntries(data, _pageNum, { universeId, scope, universeName }) {
   const keys = data.keys || [];
   if (!keys.length) return "No keys found.";
-  const header = `Universe: \`${universeId}\` | Scope: \`${scope}\`\n\n`;
-  return header + keys.map(k => `\`${k}\``).join("\n");
+  const header = universeName
+    ? `**Experience:** ${universeName} | Universe: \`${universeId}\` | Scope: \`${scope}\``
+    : `Universe: \`${universeId}\` | Scope: \`${scope}\``;
+  return `${header}\n\n${keys.map(k => `\`${k}\``).join("\n")}`;
 }
 
 module.exports = {

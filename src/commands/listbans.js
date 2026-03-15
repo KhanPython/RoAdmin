@@ -58,7 +58,7 @@ module.exports = {
         title: `Active Bans - ${universeInfo.name}`,
         iconUrl: universeInfo.icon ?? null,
         fetchPage: (pt) => openCloud.ListBans(universeId, pt),
-        formatEntries: formatBanEntries,
+        formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo.name }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
         timeoutMs: 5 * 60 * 1000,

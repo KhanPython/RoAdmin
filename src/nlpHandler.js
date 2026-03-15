@@ -361,8 +361,10 @@ async function handleMessage(client, message) {
   // Collapse consecutive updateData commands on the same entry into one operation
   commands = mergeConsecutiveUpdateData(commands);
 
-  // For the confirmation thumbnail, pick the first universe's icon
-  const primaryIcon = universeInfoMap.values().next().value?.icon ?? null;
+  // For the confirmation thumbnail and experience link, pick the first universe's info
+  const primaryInfo = universeInfoMap.values().next().value ?? {};
+  const primaryIcon = primaryInfo.icon ?? null;
+  const primaryName = primaryInfo.name ?? null;
   const isBatch = commands.length > 1;
 
   let confirmEmbed;
@@ -373,9 +375,10 @@ async function handleMessage(client, message) {
     const actionLabel = distinctActions.length === 1
       ? `${commands.length} ${distinctActions[0]}`
       : `${commands.length} commands (${distinctActions.join(", ")})`;
+    const batchDesc = primaryName ? `**Experience:** ${primaryName}\n\n${summary}` : summary;
     confirmEmbed = new EmbedBuilder()
       .setTitle(`Confirm Batch: ${actionLabel}`)
-      .setDescription(summary)
+      .setDescription(batchDesc)
       .setColor(0xffa500)
       .setFooter({ text: "This request expires in 60 seconds" })
       .setTimestamp();
@@ -385,9 +388,12 @@ async function handleMessage(client, message) {
       value: String(value),
       inline: true,
     }));
+    const singleDesc = primaryName
+      ? `**Experience:** ${primaryName}\n\n${commands[0].confirmation_summary}`
+      : commands[0].confirmation_summary;
     confirmEmbed = new EmbedBuilder()
       .setTitle(`Confirm: ${commands[0].action}`)
-      .setDescription(commands[0].confirmation_summary)
+      .setDescription(singleDesc)
       .setColor(0xffa500)
       .addFields(fields)
       .setFooter({ text: "This request expires in 60 seconds" })
@@ -441,8 +447,8 @@ async function handleMessage(client, message) {
 
       const resultEmbeds = [];
       for (const cmd of commands) {
-        const iconUrl = universeInfoMap.get(cmd.parameters.universeId)?.icon ?? null;
-        const resultEmbed = await executeAction(cmd.action, cmd.parameters, iconUrl, message.channel, message.author.id);
+        const universeInfo = universeInfoMap.get(cmd.parameters.universeId) ?? { icon: null, name: null };
+        const resultEmbed = await executeAction(cmd.action, cmd.parameters, universeInfo, message.channel, message.author.id);
         if (resultEmbed) resultEmbeds.push(resultEmbed);
         pushHistory(message.channel.id, message.author.id, cmd.action, cmd.parameters);
         // Stagger requests to avoid hitting Roblox rate limits on batches
@@ -475,11 +481,10 @@ async function handleMessage(client, message) {
 }
 
 // Execute a parsed action and return a result embed (null for paginated actions)
-async function executeAction(action, params, iconUrl, channel, authorId) {
+async function executeAction(action, params, universeInfo, channel, authorId) {
   try {
     let result;
-    // Build a minimal universeInfo-like object from the iconUrl for shared formatters
-    const universeInfo = { icon: iconUrl, name: null };
+    const iconUrl = universeInfo?.icon ?? null;
 
     switch (action) {
       case "ban":
@@ -529,7 +534,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           title: `Leaderboard: ${params.leaderboardName}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(params.leaderboardName, params.scope || "global", pt, params.universeId),
-          formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global" }),
+          formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });
         return null;
@@ -560,7 +565,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           title: `Active Bans - Universe ${params.universeId}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListBans(params.universeId, pt),
-          formatEntries: formatBanEntries,
+          formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });
         return null;
@@ -633,7 +638,7 @@ async function executeAction(action, params, iconUrl, channel, authorId) {
           title: `Keys - ${params.datastoreName}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListDataStoreKeys(params.universeId, params.datastoreName, params.scope || "global", pt),
-          formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global" }),
+          formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });
         return null;

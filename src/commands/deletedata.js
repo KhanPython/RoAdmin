@@ -70,10 +70,11 @@ module.exports = {
       }
       const universeInfo = universeCheck.universeInfo;
 
+      const experienceHeader = universeInfo?.name ? `**Experience:** ${universeInfo.name}\n\n` : "";
       const warningEmbed = new EmbedBuilder()
         .setTitle("⚠️ Confirm Data Deletion")
         .setDescription(
-          "**This action is irreversible.** The datastore entry will be permanently deleted from Roblox and cannot be recovered."
+          `${experienceHeader}**This action is irreversible.** The datastore entry will be permanently deleted from Roblox and cannot be recovered.`
         )
         .addFields(
           { name: "Key", value: key, inline: true },

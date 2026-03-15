@@ -76,7 +76,7 @@ module.exports = {
         title: `Keys - ${datastoreName}`,
         iconUrl: universeInfo.icon ?? null,
         fetchPage: (pt) => openCloud.ListDataStoreKeys(universeId, datastoreName, scope, pt),
-        formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId, scope }),
+        formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId, scope, universeName: universeInfo.name }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
         timeoutMs: 5 * 60 * 1000,
