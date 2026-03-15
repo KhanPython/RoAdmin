@@ -34,7 +34,7 @@ const client = new discord.Client({
   allowedMentions: { parse: ["users"] },
 });
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   try {
     new wokcommands(client, {
       commandsDir: path.join(__dirname, "commands"),
