@@ -16,32 +16,24 @@ jobs:
           username: ${{ secrets.REMOTE_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # === CONFIGURATION: PASTE YOUR PATHS HERE ===
-            GIT_PATH="/usr/bin/git"  # Replace with output of 'which git'
-            NPM_PATH="/usr/bin/npm" # Replace with output of 'which npm'
-            PM2_PATH="/usr/local/bin/pm2" # Replace with output of 'which pm2'
-            # ============================================
+            # 1. Load shell paths
+            source ~/.bashrc || source ~/.profile
 
-            # 1. Go to folder
+            # 2. Sync Code
             cd ~/RoAdmin
+            /usr/bin/git fetch --all
+            /usr/bin/git reset --hard origin/master
+            /usr/bin/git clean -fd
 
-            # 2. Force the VM to match GitHub exactly
-            $GIT_PATH fetch --all
-            $GIT_PATH reset --hard origin/master
-            $GIT_PATH clean -fd  # This removes any untracked files/folders
+            # 3. Create .env in root
+            echo "DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\"" > .env
+            echo "ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
+            echo "NODE_ENV=\"production\"" >> .env
 
-            # 3. Update .env
-            echo 'DISCORD_TOKEN="${{ secrets.DISCORD_TOKEN }}"' > .env
-            echo 'ENCRYPTION_KEY="${{ secrets.ENCRYPTION_KEY }}"' >> .env
-            echo 'NODE_ENV="production"' >> .env
-            echo 'LOG_LEVEL="info"' >> .env
+            # 4. Install
+            /usr/bin/npm install --production
 
-            # 4. Install dependencies (using absolute npm path)
-            $NPM_PATH install --production
-
-            # 5. Stop any existing instance, then start fresh from the ROOT directory
-            $PM2_PATH delete RoAdmin 2>/dev/null || true
-            $PM2_PATH start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
-            $PM2_PATH save
-
-            echo "Deployed successfully using absolute paths."
+            # 5. Start with absolute pathing
+            /usr/local/bin/pm2 delete RoAdmin || true
+            /usr/local/bin/pm2 start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
+            /usr/local/bin/pm2 save
