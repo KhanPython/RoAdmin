@@ -39,10 +39,9 @@ jobs:
             # 4. Install dependencies (using absolute npm path)
             $NPM_PATH install --production
 
-            # 5. Stop any existing instance, then start fresh
-            $PM2_PATH stop RoAdmin 2>/dev/null || true
+            # 5. Stop any existing instance, then start fresh from the ROOT directory
             $PM2_PATH delete RoAdmin 2>/dev/null || true
-            $PM2_PATH start src/index.js --name "RoAdmin"
+            $PM2_PATH start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
             $PM2_PATH save
 
             echo "Deployed successfully using absolute paths."
