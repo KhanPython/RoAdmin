@@ -33,7 +33,7 @@ jobs:
             # 4. Install
             /usr/bin/npm install --production
 
-            # 5. Start with absolute pathing
-            /usr/local/bin/pm2 delete RoAdmin || true
-            /usr/local/bin/pm2 start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
-            /usr/local/bin/pm2 save
+            # 5. Wipe the old instance and start fresh to apply .env and code changes
+            $PM2_PATH delete RoAdmin 2>/dev/null || true
+            $PM2_PATH start src/index.js --name "RoAdmin" --cwd "/home/orazimbetov_jalaladdin1/RoAdmin"
+            $PM2_PATH save
