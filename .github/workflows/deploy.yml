@@ -47,19 +47,17 @@ jobs:
 
             # 4. Delete the old process entirely (ensures a true fresh start)
             pm2 delete "$APP_NAME" 2>/dev/null || true
+            pm2 flush 2>/dev/null || true
 
-            # 5. Start the bot fresh
-            pm2 start src/index.js \
-              --name "$APP_NAME" \
-              --cwd "$APP_DIR" \
-              --max-memory-restart 300M \
-              --restart-delay 3000 \
-              --max-restarts 5 \
-              --time \
-              --output "$HOME/.pm2/logs/${APP_NAME}-out.log" \
-              --error  "$HOME/.pm2/logs/${APP_NAME}-error.log" \
-              --node-args="--no-warnings" \
-              -- --unhandled-rejections=strict
+            # 5. Start the bot fresh via ecosystem config
+            pm2 start ecosystem.config.js
 
             # 6. Persist PM2 process list so the bot survives VM reboots
             pm2 save
+
+            # 7. Tail the first few log lines so the deploy output confirms logging works
+            sleep 3
+            echo "--- RoAdmin stdout (last 20 lines) ---"
+            tail -n 20 "$HOME/.pm2/logs/RoAdmin-out.log" 2>/dev/null || echo "(log file not yet created)"
+            echo "--- RoAdmin stderr (last 10 lines) ---"
+            tail -n 10 "$HOME/.pm2/logs/RoAdmin-error.log" 2>/dev/null || echo "(log file not yet created)"
