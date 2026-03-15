@@ -430,7 +430,8 @@ async function handleMessage(client, message) {
     collector.stop("handled");
 
     if (i.customId === "nlp_cancel") {
-      await i.update({ content: "Cancelled.", embeds: [], components: [] });
+      await i.deferUpdate();
+      await reply.delete().catch(() => {});
       return;
     }
 
