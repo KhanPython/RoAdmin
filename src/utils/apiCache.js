@@ -10,6 +10,21 @@ const ICON_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const { MessageFlags } = require("discord.js");
 const keystore = require("./keystore");
+const log = require("./logger");
+
+// Safe key-by-key merge that blocks __proto__ / constructor / prototype pollution
+function safeAssign(target, source) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    if (source !== undefined && source !== null) {
+      log.warn("safeAssign: skipping non-object source", typeof source);
+    }
+    return;
+  }
+  for (const key of Object.keys(source)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    target[key] = source[key];
+  }
+}
 
 let _llmKeyRef = null;
 let _llmKeyGetter = null;
@@ -37,13 +52,13 @@ function loadFromDisk(llmKeyGetter) {
   const data = keystore.loadKeystore();
 
   if (data.apiKeys) {
-    Object.assign(apiKeyCache, data.apiKeys);
+    safeAssign(apiKeyCache, data.apiKeys);
   }
   if (data.universeNames) {
-    Object.assign(universeNameCache, data.universeNames);
+    safeAssign(universeNameCache, data.universeNames);
   }
   if (data.consent) {
-    Object.assign(consentCache, data.consent);
+    safeAssign(consentCache, data.consent);
   }
 
   return { llmKey: data.llmKey || null };

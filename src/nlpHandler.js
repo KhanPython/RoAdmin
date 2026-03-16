@@ -10,7 +10,6 @@ const {
 const openCloud = require("./openCloudAPI");
 const apiCache = require("./utils/apiCache");
 const log = require("./utils/logger");
-const llmCache = require("./utils/llmCache");
 const { processCommand, patchDatastoreValue } = require("./llmProcessor");
 const { sendPaginatedList } = require("./utils/pagination");
 const {
@@ -30,6 +29,7 @@ const {
   buildProcessingEmbed,
 } = require("./utils/formatters");
 const { scheduleAutoDelete } = require("./utils/autoDelete");
+const { validateNlpPrerequisites } = require("./utils/commandValidator");
 
 // Keywords that must appear in the message for it to be forwarded to the LLM.
 // Anything that doesn't match is silently ignored (no API call, no reply).
@@ -85,9 +85,6 @@ function clearChannelHistories(channelIds) {
 }
 
 const universeInfoMap = new Map();
-
-const COOLDOWN_MS = 3_000;
-const lastCommandTime = new Map(); // userId → timestamp
 
 const ALLOWED_ACTIONS = new Set(["ban", "unban", "showData", "listLeaderboard", "removeFromBoard", "checkBan", "listBans", "setData", "updateData", "listKeys"]);
 const MAX_BATCH_SIZE = 10;
@@ -196,94 +193,8 @@ async function handleMessage(client, message) {
   const looksLikeCommand = COMMAND_KEYWORDS.some(kw => textLower.includes(kw));
   if (!looksLikeCommand) return;
 
-  if (!message.member?.permissions.has("Administrator")) {
-    await replyEmbed(message, "Permission Denied", "You need **Administrator** permission to use this command.");
-    return;
-  }
-
-  if (message.guild && !apiCache.hasConsent(message.guild.id)) {
-    const consentEmbed = new EmbedBuilder()
-      .setTitle("Data Processing Consent Required")
-      .setDescription(
-        "To use natural language commands, this bot sends your message text to **Anthropic (Claude AI)** for processing.\n\n" +
-        "**What is shared with Anthropic:**\n" +
-        "\u2022 Your message text (the command you type)\n" +
-        "\u2022 Recent command history for context\n\n" +
-        "**What is shared with Roblox:**\n" +
-        "\u2022 Your Discord user ID is attached to ban actions as an audit trail\n\n" +
-        "**What is NOT shared:**\n" +
-        "\u2022 Your Discord username\n" +
-        "\u2022 API keys or credentials\n\n" +
-        "**Data retention:**\n" +
-        "\u2022 Command history is stored in memory only and cleared on restart\n" +
-        "\u2022 You can delete all data at any time with `/forgetme`\n\n" +
-        "A server administrator must accept to enable NLP commands."
-      )
-      .setColor(0x5865f2)
-      .setFooter({ text: "Consent can be revoked at any time with /forgetme" })
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("consent_accept")
-        .setLabel("Accept")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("consent_decline")
-        .setLabel("Decline")
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    const consentReply = await message.reply({ embeds: [consentEmbed], components: [row] });
-    const consentCollector = consentReply.createMessageComponentCollector({ time: 120_000 });
-
-    consentCollector.on("collect", async (ci) => {
-      if (!ci.member?.permissions.has("Administrator")) {
-        await ci.reply({ content: "Only an administrator can accept data processing consent.", ephemeral: true });
-        return;
-      }
-      consentCollector.stop("handled");
-
-      if (ci.customId === "consent_accept") {
-        apiCache.setConsent(message.guild.id, ci.user.id);
-        await ci.update({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("Consent Accepted")
-              .setDescription("NLP commands are now enabled for this server. Please re-send your command.")
-              .setColor(0x00ff00)
-              .setTimestamp(),
-          ],
-          components: [],
-        });
-      } else {
-        await ci.update({
-          content: "Consent declined. NLP commands will not be available. Slash commands (e.g. `/ban`, `/showData`) still work normally.",
-          embeds: [],
-          components: [],
-        });
-      }
-    });
-
-    consentCollector.on("end", (_, reason) => {
-      if (reason === "time") consentReply.edit({ components: [] }).catch(() => {});
-    });
-    return;
-  }
-
-  const now = Date.now();
-  const last = lastCommandTime.get(message.author.id) ?? 0;
-  const remaining = COOLDOWN_MS - (now - last);
-  if (remaining > 0) {
-    await replyEmbed(message, "Slow down", `Please wait **${(remaining / 1000).toFixed(1)}s** before sending another command.`, 0xffa500);
-    return;
-  }
-  lastCommandTime.set(message.author.id, now);
-
-  if (!llmCache.hasLlmKey()) {
-    await replyEmbed(message, "Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
-    return;
-  }
+  const prereq = await validateNlpPrerequisites(message);
+  if (!prereq.valid) return;
 
   if (!textRaw) {
     await replyEmbed(message, "How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);

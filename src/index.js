@@ -206,7 +206,8 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    await interaction.editReply({ content: `❌ Error: ${error.message}` });
+    log.error("setapikey modal error:", error.message);
+    await interaction.editReply({ content: "❌ Something went wrong while configuring the API key. Please try again." });
   }
 });
 

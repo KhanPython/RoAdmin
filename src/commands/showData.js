@@ -1,8 +1,8 @@
-const { EmbedBuilder, ApplicationCommandOptionType, MessageFlags, AttachmentBuilder } = require("discord.js");
+const { AttachmentBuilder, ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const apiCache = require("../utils/apiCache");
-const universeUtils = require("../utils/universeUtils");
-const { buildShowDataEmbed, formatJsonValue, buildErrorEmbed } = require("../utils/formatters");
+const { buildShowDataEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { validateCommand } = require("../utils/commandValidator");
+const log = require("../utils/logger");
 
 module.exports = {
   category: "Player Data",
@@ -43,41 +43,12 @@ module.exports = {
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
     const datastoreName = interaction?.options?.getString("datastore") || args[2];
 
-    // Validate key
-    if (!key || key.trim().length === 0) {
-      return "Please provide a valid entry key.";
-    }
-
-    // Validate universeId
-    if (!universeId || isNaN(universeId)) {
-      return "Please provide a valid Universe ID.";
-    }
-
-    // Validate datastoreName
-    if (!datastoreName || datastoreName.trim().length === 0) {
-      return "Please provide a datastore name.";
-    }
-
-    // Defer reply to prevent "Unknown interaction" timeout for long API calls
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const check = await validateCommand(interaction, {
+      key, universeId, datastoreName, requireApiKey: true, requireUniverse: true,
+    });
+    if (!check.valid) return check.errorString;
 
     try {
-      // Check if API key is cached, if not prompt user
-      if (!openCloud.hasApiKey(universeId)) {
-        await interaction.editReply({
-          embeds: [apiCache.createMissingApiKeyEmbed(universeId)],
-        });
-        return;
-      }
-
-      // Verify universe exists
-      const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
-      if (!universeCheck.success) {
-        await interaction.editReply({
-          content: universeCheck.errorMessage,
-        });
-        return;
-      }
 
       // Get datastore entry
       const playerDataResult = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
@@ -111,22 +82,8 @@ module.exports = {
       
       return;
     } catch (error) {
-      console.error("Error in showData command:", error);
-      
-      // Truncate error message if too long for embed (max 4096 chars for embed description, but we need to be safe)
-      let errorMessage = error.message || "An unknown error occurred";
-      if (errorMessage.length > 1000) {
-        errorMessage = errorMessage.substring(0, 997) + "...";
-      }
-      
-      await interaction.editReply({
-        embeds: [new EmbedBuilder()
-          .setTitle("Error")
-          .setColor(0xFF0000)
-          .setDescription(`Error: ${errorMessage}`)
-          .setTimestamp()
-        ],
-      });
+      log.error("Error in showData command:", error.message);
+      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
     }
   },
 };

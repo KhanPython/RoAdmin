@@ -1,10 +1,9 @@
-const { ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const apiCache = require("../utils/apiCache");
-const universeUtils = require("../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { sendPaginatedList } = require("../utils/pagination");
 const { formatLeaderboardEntries, buildErrorEmbed } = require("../utils/formatters");
+const { validateCommand } = require("../utils/commandValidator");
 
 const ENTRIES_PER_PAGE = 10;
 
@@ -47,25 +46,14 @@ module.exports = {
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
     const scopeId = interaction?.options?.getString("scope") || args[2] || "global";
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const check = await validateCommand(interaction, {
+      universeId, requireApiKey: true, requireUniverse: true,
+    });
+    if (!check.valid) return check.errorString;
+
+    const universeInfo = check.universeInfo;
 
     try {
-      if (!universeId || isNaN(universeId)) {
-        await interaction.editReply({ content: "Please provide a valid Universe ID." });
-        return;
-      }
-
-      if (!openCloud.hasApiKey(universeId)) {
-        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
-        return;
-      }
-
-      const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
-      if (!universeCheck.success) {
-        await interaction.editReply({ content: universeCheck.errorMessage });
-        return;
-      }
-      const universeInfo = universeCheck.universeInfo;
 
       pushHistory(interaction.channelId, interaction.user.id, "listLeaderboard", { leaderboardName, scopeId, universeId });
 

@@ -1,10 +1,10 @@
-const { ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const apiCache = require("../utils/apiCache");
-const universeUtils = require("../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { sendPaginatedList } = require("../utils/pagination");
 const { formatBanEntries, buildErrorEmbed } = require("../utils/formatters");
+const { validateCommand } = require("../utils/commandValidator");
+const log = require("../utils/logger");
 
 module.exports = {
   category: "Moderation",
@@ -31,25 +31,14 @@ module.exports = {
   callback: async ({ user, args, interaction }) => {
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[0]);
 
-    if (!universeId || isNaN(universeId)) {
-      await interaction.reply({ content: "Please provide a valid Universe ID.", flags: MessageFlags.Ephemeral });
-      return;
-    }
+    const check = await validateCommand(interaction, {
+      universeId, requireApiKey: true, requireUniverse: true,
+    });
+    if (!check.valid) return check.errorString;
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const universeInfo = check.universeInfo;
 
     try {
-      if (!openCloud.hasApiKey(universeId)) {
-        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
-        return;
-      }
-
-      const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
-      if (!universeCheck.success) {
-        await interaction.editReply({ content: universeCheck.errorMessage });
-        return;
-      }
-      const universeInfo = universeCheck.universeInfo;
 
       pushHistory(interaction.channelId, interaction.user.id, "listBans", { universeId });
 
@@ -64,7 +53,7 @@ module.exports = {
         timeoutMs: 5 * 60 * 1000,
       });
     } catch (error) {
-      console.error("Error in listbans command:", error);
+      log.error("Error in listbans command:", error.message);
       await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] }).catch(() => {});
     }
   },

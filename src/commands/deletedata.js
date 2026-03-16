@@ -1,9 +1,9 @@
-const { ApplicationCommandOptionType, MessageFlags, AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { ApplicationCommandOptionType, AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const apiCache = require("../utils/apiCache");
-const universeUtils = require("../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { buildDeleteDataEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { validateCommand } = require("../utils/commandValidator");
+const log = require("../utils/logger");
 
 module.exports = {
   category: "Player Data",
@@ -51,24 +51,14 @@ module.exports = {
     const datastoreName = interaction?.options?.getString("datastore") || args[2];
     const scope = interaction?.options?.getString("scope") || args[3] || "global";
 
-    if (!key || key.trim().length === 0) return "Please provide a valid entry key.";
-    if (!universeId || isNaN(universeId)) return "Please provide a valid Universe ID.";
-    if (!datastoreName || datastoreName.trim().length === 0) return "Please provide a datastore name.";
+    const check = await validateCommand(interaction, {
+      key, universeId, datastoreName, requireApiKey: true, requireUniverse: true,
+    });
+    if (!check.valid) return check.errorString;
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const universeInfo = check.universeInfo;
 
     try {
-      if (!openCloud.hasApiKey(universeId)) {
-        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
-        return;
-      }
-
-      const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
-      if (!universeCheck.success) {
-        await interaction.editReply({ content: universeCheck.errorMessage });
-        return;
-      }
-      const universeInfo = universeCheck.universeInfo;
 
       const experienceHeader = universeInfo?.name ? `**Experience:** ${universeInfo.name}\n\n` : "";
       const warningEmbed = new EmbedBuilder()
@@ -153,7 +143,7 @@ module.exports = {
         }
       });
     } catch (error) {
-      console.error("Error in deletedata command:", error);
+      log.error("Error in deletedata command:", error.message);
       await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
     }
   },

@@ -1,9 +1,8 @@
-const { ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
-const apiCache = require("./../utils/apiCache");
-const universeUtils = require("./../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { buildCheckBanEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
 module.exports = {
@@ -38,28 +37,14 @@ module.exports = {
     const userId = interaction?.options?.getNumber("userid") || parseInt(args[0]);
     const universeId = interaction?.options?.getNumber("universeid") || parseInt(args[1]);
 
-    if (!userId || isNaN(userId)) {
-      return "Please provide a valid user ID.";
-    }
+    const check = await validateCommand(interaction, {
+      userId, universeId, requireApiKey: true, requireUniverse: true,
+    });
+    if (!check.valid) return check.errorString;
 
-    if (!universeId || isNaN(universeId)) {
-      return "Please provide a valid Universe ID.";
-    }
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const universeInfo = check.universeInfo;
 
     try {
-      if (!openCloud.hasApiKey(universeId)) {
-        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
-        return;
-      }
-
-      const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
-      if (!universeCheck.success) {
-        await interaction.editReply({ content: universeCheck.errorMessage });
-        return;
-      }
-      const universeInfo = universeCheck.universeInfo;
 
       const result = await openCloud.CheckBanStatus(userId, universeId);
 

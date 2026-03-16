@@ -1,9 +1,8 @@
-const { ApplicationCommandOptionType, MessageFlags } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
-const apiCache = require("./../utils/apiCache");
-const universeUtils = require("./../utils/universeUtils");
 const { pushHistory } = require("../nlpHandler");
 const { buildBanEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
 module.exports = {
@@ -59,39 +58,14 @@ module.exports = {
     const duration = interaction?.options?.getString("duration") || args[3] || null;
     const excludeAltAccounts = interaction?.options?.getBoolean("excludealts") || false;
 
-    if (!userId || isNaN(userId)) {
-      return "Please provide a valid user ID.";
-    }
+    const check = await validateCommand(interaction, {
+      userId, universeId, duration, requireApiKey: true, requireUniverse: true,
+    });
+    if (!check.valid) return check.errorString;
 
-    if (!universeId || isNaN(universeId)) {
-      return "Please provide a valid Universe ID.";
-    }
-
-    if (duration) {
-      const split = duration.match(/\d+|\D+/g);
-      if (!split || split.length !== 2) {
-        return 'Invalid time format! Example format: "7d" where "d" = days, "m" = months, "y" = years.';
-      }
-      const type = split[1].toLowerCase();
-      if (!["d", "m", "y", "h"].includes(type)) {
-        return 'Please use "d" (days), "m" (months), "y" (years), or "h" (hours) for duration';
-      }
-    }
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const universeInfo = check.universeInfo;
 
     try {
-      if (!openCloud.hasApiKey(universeId)) {
-        await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(universeId)] });
-        return;
-      }
-
-      const universeCheck = await universeUtils.verifyUniverseExists(openCloud, universeId);
-      if (!universeCheck.success) {
-        await interaction.editReply({ content: universeCheck.errorMessage });
-        return;
-      }
-      const universeInfo = universeCheck.universeInfo;
 
       const response = await openCloud.BanUser(userId, reason, duration, excludeAltAccounts, universeId, interaction.user.id);
 
