@@ -171,8 +171,8 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
         const allKeys = new Set([...Object.keys(currentValue), ...Object.keys(patched)]);
         for (const k of allKeys) {
           if (!expectedFields.has(k) && JSON.stringify(currentValue[k]) !== JSON.stringify(patched[k])) {
-            log.warn(`updateData safety check: LLM modified unexpected field "${k}" for key "${params.key}"`);
-            return buildInternalErrorEmbed();
+            log.warn(`updateData safety check: LLM modified unexpected field "${k}" for key "${params.key}". Expected fields: [${[...expectedFields].join(", ")}]`);
+            return buildErrorEmbed(`Safety check failed: the AI unexpectedly modified field \`${k}\` which was not part of your request. No changes were written. Try rephrasing your instruction to be more specific.`);
           }
         }
 
@@ -210,8 +210,9 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
         return buildErrorEmbed(`Action "${action}" is not recognised.`);
     }
   } catch (err) {
-    log.error(`executeAction error (${action}):`, err.message);
-    return buildErrorEmbed("Something went wrong while executing the command. Please try again.");
+    const detail = err.response?.data?.message || err.response?.data || err.message;
+    log.error(`executeAction error (${action}): ${detail}`, err.response?.status ?? "");
+    return buildErrorEmbed(`Error executing \`${action}\`: ${String(detail).slice(0, 500)}`);
   }
 }
 

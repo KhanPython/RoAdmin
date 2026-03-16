@@ -1,7 +1,7 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlp/nlpHandler");
-const { buildSetDataEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
+const { buildSetDataEmbed, buildErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -83,8 +83,9 @@ module.exports = {
 
       await interaction.editReply({ embeds: [buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, scope }, universeInfo)] });
     } catch (error) {
-      log.error("Error in setdata command:", error.message);
-      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
+      const detail = error.response?.data?.message || error.response?.data || error.message;
+      log.error("Error in setdata command:", detail, error.response?.status ?? "");
+      await interaction.editReply({ embeds: [buildErrorEmbed(`Unexpected error: ${String(detail).slice(0, 500)}`)] });
     }
   },
 };
