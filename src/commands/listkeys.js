@@ -1,6 +1,6 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const { pushHistory } = require("../nlpHandler");
+const { pushHistory } = require("../nlp/nlpHandler");
 const { sendPaginatedList } = require("../utils/pagination");
 const { formatKeyEntries, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");

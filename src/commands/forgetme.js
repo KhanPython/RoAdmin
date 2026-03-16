@@ -9,7 +9,7 @@ const {
 
 const apiCache = require("../utils/apiCache");
 const llmCache = require("../utils/llmCache");
-const { clearUserHistory, clearChannelHistories } = require("../nlpHandler");
+const { clearUserHistory, clearChannelHistories } = require("../nlp/nlpHandler");
 
 module.exports = {
   category: "Privacy",

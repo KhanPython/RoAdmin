@@ -7,7 +7,7 @@ globalThis.ReadableStream = ReadableStream;
 const discord = require("discord.js");
 const wokcommands = require("wokcommands");
 const path = require("path");
-const { handleMessage } = require("./nlpHandler");
+const { handleMessage } = require("./nlp/nlpHandler");
 
 const apiCache = require("./utils/apiCache");
 const llmCache = require("./utils/llmCache");

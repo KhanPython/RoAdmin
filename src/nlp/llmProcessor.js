@@ -1,8 +1,8 @@
 // LLM command processor - parses natural language into structured Roblox admin commands via Anthropic
 
 const Anthropic = require("@anthropic-ai/sdk");
-const llmCache = require("./utils/llmCache");
-const log = require("./utils/logger");
+const llmCache = require("../utils/llmCache");
+const log = require("../utils/logger");
 
 const FALLBACK = [{
   action: null,
