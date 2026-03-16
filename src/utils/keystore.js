@@ -12,7 +12,7 @@ const KEYSTORE_BAK = path.join(KEYSTORE_DIR, "keystore.enc.bak");
 const KEYSTORE_SALT_PATH = path.join(KEYSTORE_DIR, "keystore.salt");
 
 const HKDF_INFO = "voltbot-keystore-v1";
-// Legacy static salt used before per-deployment salts were introduced — kept only for migration.
+// Legacy static salt used before per-deployment salts were introduced - kept only for migration.
 const LEGACY_HKDF_SALT = Buffer.from("voltbot-keystore-salt-v1");
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
@@ -27,7 +27,7 @@ function _loadOrCreateSalt() {
     if (fs.existsSync(KEYSTORE_SALT_PATH)) {
       const buf = fs.readFileSync(KEYSTORE_SALT_PATH);
       if (buf.length === 32) return { salt: buf, isNew: false };
-      log.warn("keystore.salt has unexpected length — regenerating.");
+      log.warn("keystore.salt has unexpected length - regenerating.");
     }
     const salt = crypto.randomBytes(32);
     fs.writeFileSync(KEYSTORE_SALT_PATH, salt, { mode: 0o600 });

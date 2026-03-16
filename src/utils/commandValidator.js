@@ -147,7 +147,7 @@ async function validateNlpPrerequisites(message) {
   if (message.guild && !apiCache.hasConsent(message.guild.id)) {
     const accepted = await _showConsentFlow(message);
     if (!accepted) return { valid: false };
-    // Consent was just accepted — tell user to re-send (mirrors original behaviour)
+    // Consent was just accepted - tell user to re-send (mirrors original behaviour)
     return { valid: false };
   }
 

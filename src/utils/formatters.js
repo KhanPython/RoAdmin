@@ -29,7 +29,7 @@ function buildErrorEmbed(message) {
     .setTimestamp();
 }
 
-// Use this in command catch blocks — never pass error.message directly to Discord
+// Use this in command catch blocks - never pass error.message directly to Discord
 function buildInternalErrorEmbed() {
   return buildErrorEmbed("An unexpected error occurred. Please try again.");
 }

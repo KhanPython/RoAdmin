@@ -21,6 +21,31 @@ const {
 } = require("../utils/formatters");
 const { scheduleAutoDelete } = require("../utils/autoDelete");
 
+// Recursively collect the names of all leaf keys that differ between two objects.
+// Arrays are treated as opaque values (compared by JSON string) so only plain
+// object nesting is traversed. Returns null if nesting exceeds 10 levels - the
+// caller must treat null as "cannot verify" and block the write.
+function getChangedLeafKeys(a, b, depth = 0) {
+  if (depth > 10) return null;
+  const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
+  const changed = new Set();
+  for (const k of keys) {
+    const aVal = a?.[k];
+    const bVal = b?.[k];
+    if (JSON.stringify(aVal) === JSON.stringify(bVal)) continue;
+    const aIsObj = typeof aVal === "object" && aVal !== null && !Array.isArray(aVal);
+    const bIsObj = typeof bVal === "object" && bVal !== null && !Array.isArray(bVal);
+    if (aIsObj && bIsObj) {
+      const nested = getChangedLeafKeys(aVal, bVal, depth + 1);
+      if (nested === null) return null;
+      for (const nk of nested) changed.add(nk);
+    } else {
+      changed.add(k);
+    }
+  }
+  return changed;
+}
+
 // Execute a parsed action and return a result embed (null for paginated actions)
 async function executeAction(action, params, universeInfo, channel, authorId, guildId) {
   try {
@@ -156,8 +181,10 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
         // Sanitize field names and values to strip control characters before they reach the next LLM call.
         const instruction = params.fields
           .map(f => {
-            const field = String(f.field).replace(/[\r\n\x00-\x1F"\\]/g, " ").trim().slice(0, 200);
-            const newValue = String(f.newValue).replace(/[\r\n\x00-\x1F]/g, " ").trim().slice(0, 500);
+            // Strip control chars AND XML tag chars to prevent tag-boundary injection
+            // into the <instruction>...</instruction> block sent to the second LLM call.
+            const field = String(f.field).replace(/[\r\n\x00-\x1F"\\<>/]/g, " ").trim().slice(0, 200);
+            const newValue = String(f.newValue).replace(/[\r\n\x00-\x1F<>/]/g, " ").trim().slice(0, 500);
             return `Set the field "${field}" to ${newValue}`;
           })
           .join(". ");
@@ -166,12 +193,18 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
           return buildErrorEmbed(`Could not apply update: ${summary}`);
         }
 
-        // Safety: verify the LLM only modified the fields that were requested
+        // Safety: verify the LLM only modified the fields that were requested.
+        // We collect changed leaf-key names recursively so that nested structures
+        // (e.g. { Data: { Gold: 50 } }) don't trigger a false positive when only
+        // an inner field like "Gold" was altered.
         const expectedFields = new Set(params.fields.map(f => f.field));
-        const allKeys = new Set([...Object.keys(currentValue), ...Object.keys(patched)]);
-        for (const k of allKeys) {
-          if (!expectedFields.has(k) && JSON.stringify(currentValue[k]) !== JSON.stringify(patched[k])) {
-            log.warn(`updateData safety check: LLM modified unexpected field "${k}" for key "${params.key}". Expected fields: [${[...expectedFields].join(", ")}]`);
+        const changedLeafKeys = getChangedLeafKeys(currentValue, patched);
+        if (changedLeafKeys === null) {
+          log.warn(`updateData safety check: nesting depth exceeded for key "${params.key}" - write blocked`);
+          return buildErrorEmbed("Cannot verify this update - the datastore entry is too deeply nested to safely check. No changes were written.");
+        }
+        for (const k of changedLeafKeys) {
+          if (!expectedFields.has(k)) {
             return buildErrorEmbed(`Safety check failed: the AI unexpectedly modified field \`${k}\` which was not part of your request. No changes were written. Try rephrasing your instruction to be more specific.`);
           }
         }

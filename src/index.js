@@ -183,7 +183,7 @@ client.on("interactionCreate", async (interaction) => {
       throw new Error("Could not validate the API key. Check the universe ID and try again.");
     }
 
-    // Key validated — now persist it
+    // Key validated - now persist it
     const persisted = openCloud.setApiKey(interaction.guildId, universeId, apiKey);
 
     let universeInfo;

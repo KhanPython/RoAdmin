@@ -83,7 +83,7 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 | Command | Parameters | Description |
 |---------|-----------|-------------|
 | `/setapikey` | `universeid` | Register a Roblox Open Cloud API key for a universe. API key is entered via a secure modal. |
-| `/setllmkey` | — | Register the Anthropic API key for NLP processing. Key is entered via a secure modal. |
+| `/setllmkey` | - | Register the Anthropic API key for NLP processing. Key is entered via a secure modal. |
 
 ### Moderation
 
@@ -120,7 +120,7 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 
 | Command | Parameters | Description |
 | --- | --- | --- |
-| `/about` | — | Show bot version, uptime, storage mode, NLP consent status, and data practices |
+| `/about` | - | Show bot version, uptime, storage mode, NLP consent status, and data practices |
 
 \* Optional parameter
 

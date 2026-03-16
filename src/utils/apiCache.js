@@ -62,7 +62,7 @@ function loadFromDisk(llmKeysGetter) {
       if (k.includes(":")) {
         scoped[k] = v;
       } else {
-        log.warn(`Skipping legacy un-scoped API key for universe ${k} — re-enter via /setapikey`);
+        log.warn(`Skipping legacy un-scoped API key for universe ${k} - re-enter via /setapikey`);
       }
     }
     safeAssign(apiKeyCache, scoped);

@@ -59,7 +59,7 @@ module.exports = {
     const universeInfo = check.universeInfo;
 
     try {
-      // Attempt deletion directly — the Roblox API returns 404 if the key doesn't exist,
+      // Attempt deletion directly - the Roblox API returns 404 if the key doesn't exist,
       // so there's no need to paginate the full leaderboard just to confirm existence first.
       const response = await openCloud.RemoveOrderedDataStoreData(interaction.guildId, userId, leaderboardName, key, "global", universeId);
 

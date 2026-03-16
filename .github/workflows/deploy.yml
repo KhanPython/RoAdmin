@@ -5,7 +5,7 @@ on:
     branches:
       - master
     paths-ignore:
-      - 'README.md'
+      - "README.md"
 
 jobs:
   deploy:
@@ -36,12 +36,12 @@ jobs:
             git reset --hard origin/master
             git clean -fd
 
-            # 2. Write .env — secrets passed as env vars, never interpolated into the script text
+            # 2. Write .env - secrets passed as env vars, never interpolated into the script text
             printf 'DISCORD_TOKEN=%s\nENCRYPTION_KEY=%s\nNODE_ENV=production\n' \
               "$DISCORD_TOKEN" "$ENCRYPTION_KEY" > .env
             chmod 600 .env
 
-            # 3. Install production dependencies (incremental — only installs what changed)
+            # 3. Install production dependencies (incremental - only installs what changed)
             npm install --omit=dev
 
             # 4. Kill the PM2 daemon entirely and wipe stale state
