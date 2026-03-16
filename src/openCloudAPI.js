@@ -41,7 +41,8 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     // Use REST API directly with the correct endpoint format
     // The endpoint should be: /universes/{id}/data-stores/{name}/scopes/{scope}/entries/{entryKey}
     const encodedKey = encodeURIComponent(key);
-    const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries/${encodedKey}`;
+    const encodedDSName = encodeURIComponent(datastoreName);
+    const path = `universes/${universeId}/data-stores/${encodedDSName}/scopes/global/entries/${encodedKey}`;
     const url = `https://apis.roblox.com/cloud/v2/${path}`;
 
     log.debug(`GetDataStoreEntry - URL: ${url}`);
@@ -138,7 +139,8 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName) {
     }
 
     // Use REST API directly instead of DataStoreService
-    const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries`;
+    const encodedDSName = encodeURIComponent(datastoreName);
+    const path = `universes/${universeId}/data-stores/${encodedDSName}/scopes/global/entries`;
     const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
     url.searchParams.append('entryKey', `player_${userId}`);
 
@@ -174,7 +176,8 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
     }
 
     // Use REST API directly instead of DataStoreService
-    const path = `universes/${universeId}/data-stores/${datastoreName}/scopes/global/entries`;
+    const encodedDSName = encodeURIComponent(datastoreName);
+    const path = `universes/${universeId}/data-stores/${encodedDSName}/scopes/global/entries`;
     const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
     url.searchParams.append('entryKey', `player_${userId}`);
 
@@ -241,7 +244,9 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
     }
     
     // Construct the correct Open Cloud API path for listing ordered data stores
-    const path = `universes/${universeId}/ordered-data-stores/${orderedDatastoreName}/scopes/${scopeId}/entries`;
+    const encodedODSName = encodeURIComponent(orderedDatastoreName);
+    const encodedScope = encodeURIComponent(scopeId);
+    const path = `universes/${universeId}/ordered-data-stores/${encodedODSName}/scopes/${encodedScope}/entries`;
     const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
     url.searchParams.append('orderBy', 'value desc');
     
@@ -310,11 +315,12 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
 };
 
 exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreName, scopeId = "global", universeId = null) {
+  const MAX_PAGES = 100;
   try {
     let pageToken = null;
     let pageCount = 0;
     
-    while (true) {
+    while (pageCount < MAX_PAGES) {
       pageCount++;
       
       const response = await exports.ListOrderedDataStoreEntries(orderedDatastoreName, scopeId, pageToken, universeId);
@@ -338,6 +344,7 @@ exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreNa
       
       pageToken = response.nextPageToken;
     }
+    return { exists: false, entry: null, message: `Key not found within first ${MAX_PAGES} pages (limit reached; key may exist beyond this point)` };
   } catch (error) {
     log.error("Error checking ordered datastore key:", error.message);
     return { exists: false, entry: null, message: `Error: ${error.message}` };
@@ -378,7 +385,7 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
       payload.gameJoinRestriction.duration = durationString;
     }
 
-    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${userId}`;
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${encodeURIComponent(String(userId))}`;
     const response = await axios.patch(url, payload, { headers: getApiHeaders(universeId) });
 
     if (response.status === 200) {
@@ -409,7 +416,7 @@ exports.UnbanUser = async function (userId, universeId = null) {
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const payload = { gameJoinRestriction: { active: false } };
-    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${userId}`;
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${encodeURIComponent(String(userId))}`;
 
     const response = await axios.patch(url, payload, { headers: getApiHeaders(universeId) });
 
@@ -439,7 +446,7 @@ exports.CheckBanStatus = async function (userId, universeId) {
     if (!universeId) throw new Error("Universe ID is required");
     const limited = checkLimit(universeId);
     if (limited) return limited;
-    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${userId}`;
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${encodeURIComponent(String(userId))}`;
     const response = await axios.get(url, { headers: getApiHeaders(universeId) });
     if (response.status === 200) {
       const restriction = response.data.gameJoinRestriction ?? {};
@@ -500,14 +507,16 @@ exports.SetDataStoreEntry = async function (key, value, universeId, datastoreNam
     if (!datastoreName) throw new Error("Datastore name is required");
     if (!key) throw new Error("Entry key is required");
     const encodedKey = encodeURIComponent(key);
-    const entryUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries/${encodedKey}`;
+    const encodedDSName = encodeURIComponent(datastoreName);
+    const encodedScope = encodeURIComponent(scope);
+    const entryUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodedDSName}/scopes/${encodedScope}/entries/${encodedKey}`;
     try {
       const response = await axios.patch(entryUrl, { value }, { headers: getApiHeaders(universeId) });
       if (response.status === 200 || response.status === 201) return createSuccessResponse();
     } catch (patchErr) {
       if (patchErr.response?.status !== 404) throw patchErr;
       // Key doesn't exist yet - create it
-      const createUrl = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries`);
+      const createUrl = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodedDSName}/scopes/${encodedScope}/entries`);
       createUrl.searchParams.set("id", key);
       const postResponse = await axios.post(createUrl.toString(), { value }, { headers: getApiHeaders(universeId) });
       if (postResponse.status === 200 || postResponse.status === 201) return createSuccessResponse();
@@ -526,7 +535,9 @@ exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "
     const limited = checkLimit(universeId);
     if (limited) return limited;
     if (!datastoreName) throw new Error("Datastore name is required");
-    const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries`);
+    const encodedDSName = encodeURIComponent(datastoreName);
+    const encodedScope = encodeURIComponent(scope);
+    const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodedDSName}/scopes/${encodedScope}/entries`);
     url.searchParams.set("maxPageSize", "20");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     const response = await axios.get(url.toString(), { headers: getApiHeaders(universeId) });
@@ -551,7 +562,9 @@ exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, s
     if (!datastoreName) throw new Error("Datastore name is required");
     if (!key) throw new Error("Entry key is required");
     const encodedKey = encodeURIComponent(key);
-    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${datastoreName}/scopes/${scope}/entries/${encodedKey}`;
+    const encodedDSName = encodeURIComponent(datastoreName);
+    const encodedScope = encodeURIComponent(scope);
+    const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodedDSName}/scopes/${encodedScope}/entries/${encodedKey}`;
     const response = await axios.delete(url, { headers: getApiHeaders(universeId) });
     if (response.status === 200 || response.status === 204) return createSuccessResponse();
     return createDataStoreErrorResponse("DeleteDataStoreEntry", `Unexpected status: ${response.status}`);
@@ -671,8 +684,22 @@ exports.GetUniverseName = async function (universeId) {
           const iconResponse = await axios.get(iconUrl);
 
           if (iconResponse.data && iconResponse.data.data && iconResponse.data.data[0]) {
-            icon = iconResponse.data.data[0].imageUrl || null;
-            if (icon) apiCache.setUniverseIcon(universeId, icon);
+            const rawIconUrl = iconResponse.data.data[0].imageUrl || null;
+            if (rawIconUrl) {
+              try {
+                const parsed = new URL(rawIconUrl);
+                const h = parsed.hostname;
+                const isRobloxDomain =
+                  h === "roblox.com" || h.endsWith(".roblox.com") ||
+                  h === "rbxcdn.com"  || h.endsWith(".rbxcdn.com");
+                if (parsed.protocol === "https:" && isRobloxDomain) {
+                  icon = rawIconUrl;
+                  apiCache.setUniverseIcon(universeId, icon);
+                }
+              } catch {
+                // Ignore malformed icon URLs
+              }
+            }
           }
         } catch (iconError) {
           log.debug("Failed to fetch icon:", iconError.message);

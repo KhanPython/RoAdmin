@@ -68,6 +68,9 @@ module.exports = {
     }
 
     if (duration) {
+      if (duration.length > 20) {
+        return 'Invalid time format! Example format: "7d" where "d" = days, "m" = months, "y" = years.';
+      }
       const split = duration.match(/\d+|\D+/g);
       if (!split || split.length !== 2) {
         return 'Invalid time format! Example format: "7d" where "d" = days, "m" = months, "y" = years.';
