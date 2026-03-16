@@ -29,6 +29,11 @@ function buildErrorEmbed(message) {
     .setTimestamp();
 }
 
+// Use this in command catch blocks — never pass error.message directly to Discord
+function buildInternalErrorEmbed() {
+  return buildErrorEmbed("An unexpected error occurred. Please try again.");
+}
+
 function buildProcessingEmbed(description = "Processing your request. This may take a moment.") {
   return new EmbedBuilder()
     .setTitle("Processing...")
@@ -243,6 +248,7 @@ function formatKeyEntries(data, _pageNum, { universeId, scope, universeName }) {
 module.exports = {
   buildResultEmbed,
   buildErrorEmbed,
+  buildInternalErrorEmbed,
   buildProcessingEmbed,
   buildBanEmbed,
   buildUnbanEmbed,

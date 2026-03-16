@@ -1,7 +1,7 @@
 const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
-const { buildRemoveFromBoardEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildRemoveFromBoardEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -59,33 +59,29 @@ module.exports = {
     const universeInfo = check.universeInfo;
 
     try {
-      
-      const keyToCheck = key || `${userId}`;
-      const checkResult = await openCloud.CheckOrderedDataStoreKey(keyToCheck, leaderboardName, "global", universeId);
-      
-      if (!checkResult.exists) {
+      // Attempt deletion directly — the Roblox API returns 404 if the key doesn't exist,
+      // so there's no need to paginate the full leaderboard just to confirm existence first.
+      const response = await openCloud.RemoveOrderedDataStoreData(interaction.guildId, userId, leaderboardName, key, "global", universeId);
+
+      if (!response.success && response.status && response.status.toLowerCase().includes("not found")) {
+        const keyToCheck = key || `${userId}`;
         const notFoundEmbed = new EmbedBuilder()
-          .setTitle(`Remove Leaderboard Entry`)
+          .setTitle("Remove Leaderboard Entry")
           .setColor(0xFFFF00)
-          .setDescription(`**Experience:** ${universeInfo.name}\n\n⚠️ ${checkResult.message}`)
+          .setDescription(`**Experience:** ${universeInfo.name}\n\n⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.`)
           .addFields(
-            { name: "UserId:", value: `\`${userId}\``, inline: true },
+            { name: "User ID:", value: `\`${userId}\``, inline: true },
             { name: "Universe ID:", value: `\`${universeId}\``, inline: true },
             { name: "Leaderboard Name:", value: leaderboardName, inline: true },
             { name: "Key searched:", value: keyToCheck, inline: true }
           )
           .setTimestamp();
-        
-        if (universeInfo.icon) {
-          notFoundEmbed.setThumbnail(universeInfo.icon);
-        }
-        
+
+        if (universeInfo.icon) notFoundEmbed.setThumbnail(universeInfo.icon);
+
         await interaction.editReply({ embeds: [notFoundEmbed] });
         return;
       }
-
-      // Key exists, proceed with removal
-      const response = await openCloud.RemoveOrderedDataStoreData(userId, leaderboardName, key, "global", universeId);
 
       if (response.success) {
         pushHistory(interaction.channelId, interaction.user.id, "removeFromBoard", { userId, leaderboardName, key, universeId });
@@ -94,7 +90,7 @@ module.exports = {
       await interaction.editReply({ embeds: [buildRemoveFromBoardEmbed(response, { userId, universeId, leaderboardName, key }, universeInfo)] });
     } catch (error) {
       log.error("Error in removeFromBoard command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
     }
   },
 };

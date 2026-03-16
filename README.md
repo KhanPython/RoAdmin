@@ -30,9 +30,20 @@
 
 ## Setup
 
-### 1. Environment Variable
+### 1. Environment Variables
 
-The only secret stored in `.env` (or as a GitHub Actions secret) is your Discord bot token:
+<!-- AUTO-GENERATED: from CLAUDE.md environment variables table -->
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `DISCORD_TOKEN` | Yes | Discord bot token |
+| `ENCRYPTION_KEY` | No | 64-char hex string (32 bytes) for AES-256-GCM encryption of persisted API keys. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Without this, keys are held in memory only and cleared on restart. |
+| `NODE_ENV` | No | Set to `"production"` on the GCP VM. Controls default log level. |
+| `LOG_LEVEL` | No | `"debug"`, `"info"`, `"warn"`, or `"error"`. Defaults to `"info"` in production, `"debug"` otherwise. |
+| `RATE_LIMIT_MAX` | No | Max Roblox API requests per universe per window (default: 50). |
+| `RATE_LIMIT_WINDOW_MS` | No | Rate limit window in ms (default: 60000). |
+<!-- END AUTO-GENERATED -->
+
+Minimal `.env` to get started:
 
 ```
 DISCORD_TOKEN=your-discord-bot-token
@@ -80,6 +91,8 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 |---------|-----------|-------------|
 | `/ban` | `userid`, `reason`, `universeid`, `duration`\*, `excludealts`\* | Ban a player. Duration format: `7d`, `2h`, `1m`, `1y`. Omit for permanent. |
 | `/unban` | `userid`, `universeid` | Remove a player's ban |
+| `/checkban` | `userid`, `universeid` | Check the ban status of a player |
+| `/listbans` | `universeid` | List all active bans in a universe (paginated) |
 
 ### Player Data
 
@@ -88,6 +101,7 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 | `/showData` | `key`, `universeid`, `datastore` | Read a single standard datastore entry by key |
 | `/setdata` | `key`, `universeid`, `datastore`, `value`, `scope`\* | Set or update a datastore entry (upsert). Value can be JSON or a plain string. |
 | `/deletedata` | `key`, `universeid`, `datastore`, `scope`\* | Delete a datastore entry. Requires button confirmation; attaches a snapshot of the deleted value as a file. |
+| `/listkeys` | `universeid`, `datastore`, `scope`\* | List all entry keys in a datastore (paginated) |
 
 ### Leaderboards
 
@@ -95,6 +109,18 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 |---------|-----------|-------------|
 | `/listleaderboard` | `leaderboard`, `universeid`, `scope`\* | List top entries from an ordered datastore (paginated) |
 | `/removeFromBoard` | `userid`, `leaderboard`, `universeid`, `key`\* | Remove a player's entry from an ordered datastore |
+
+### Privacy
+
+| Command | Parameters | Description |
+| --- | --- | --- |
+| `/forgetme` | `scope`\* (`"personal"` or `"server"`) | Delete data the bot holds. Personal scope: clears your NLP history. Server scope: wipes all API keys, LLM key, consent, and command history for the guild. |
+
+### Info
+
+| Command | Parameters | Description |
+| --- | --- | --- |
+| `/about` | — | Show bot version, uptime, storage mode, NLP consent status, and data practices |
 
 \* Optional parameter
 
@@ -201,12 +227,13 @@ You can also chain `updateData` with other actions in the same request:
 Production deploys automatically on every push to `master` via `.github/workflows/deploy.yml`:
 
 1. SSH into the GCP VM
-2. `git pull origin master`
-3. Overwrite `.env` with `DISCORD_TOKEN` from GitHub Secrets
-4. `npm install --production`
-5. `pm2 restart RoAdmin`
+2. `git fetch --all && git reset --hard origin/master && git clean -fd`
+3. Overwrite `.env` with `DISCORD_TOKEN`, `ENCRYPTION_KEY`, and `NODE_ENV=production` from GitHub Secrets
+4. `npm install --omit=dev`
+5. Kill the PM2 daemon (`pm2 kill`), then start fresh via `pm2 start ecosystem.config.js`
+6. `pm2 save` to persist the process list across VM reboots
 
-Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCORD_TOKEN`.
+Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCORD_TOKEN`, `ENCRYPTION_KEY`.
 
 ---
 
@@ -223,4 +250,4 @@ Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCO
 | Environment | dotenv v16 |
 | Deployment | GitHub Actions → PM2 on GCP VM |
 
-Per-universe API keys and the Anthropic key are held **in memory only** and are never written to disk or logs.
+Per-universe API keys and the Anthropic key are never logged. When `ENCRYPTION_KEY` is set, they are encrypted with AES-256-GCM and persisted to `data/keystore.enc` so they survive restarts. Without `ENCRYPTION_KEY`, they are held in memory only and cleared on restart.

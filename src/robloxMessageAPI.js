@@ -9,7 +9,7 @@ exports.MessageSend = async function MessageSend(
 ) {
   try {
     const response = await axios.post(
-      `https://apis.roblox.com/messaging-service/v1/universes/${universeId}/topics/${topic}`,
+      `https://apis.roblox.com/messaging-service/v1/universes/${encodeURIComponent(String(universeId))}/topics/${encodeURIComponent(String(topic))}`,
       { message },
       {
         headers: {

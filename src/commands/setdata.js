@@ -1,7 +1,7 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
-const { buildSetDataEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildSetDataEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -59,7 +59,7 @@ module.exports = {
     const scope = interaction?.options?.getString("scope") || args[4] || "global";
 
     const check = await validateCommand(interaction, {
-      key, universeId, datastoreName, rawValue, requireApiKey: true, requireUniverse: true,
+      key, universeId, datastoreName, rawValue, scope, requireApiKey: true, requireUniverse: true,
     });
     if (!check.valid) return check.errorString;
 
@@ -75,7 +75,7 @@ module.exports = {
 
     try {
 
-      const result = await openCloud.SetDataStoreEntry(key, parsedValue, universeId, datastoreName, scope);
+      const result = await openCloud.SetDataStoreEntry(interaction.guildId, key, parsedValue, universeId, datastoreName, scope);
 
       if (result.success) {
         pushHistory(interaction.channelId, interaction.user.id, "setData", { key, universeId, datastoreName, value: rawValue, scope });
@@ -84,7 +84,7 @@ module.exports = {
       await interaction.editReply({ embeds: [buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, scope }, universeInfo)] });
     } catch (error) {
       log.error("Error in setdata command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
     }
   },
 };

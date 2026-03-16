@@ -15,7 +15,6 @@
     "axios": "^1.13.6",
     "discord.js": "^14.25.1",
     "dotenv": "^16.0.3",
-    "rbxcloud": "^1.2.0",
     "undici": "^6.24.1",
     "wokcommands": "^1.5.3"
   },

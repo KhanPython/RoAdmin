@@ -11,6 +11,7 @@ const llmCache = require("./llmCache");
 const log = require("./logger");
 
 const DURATION_UNITS = ["d", "m", "y", "h"];
+const SCOPE_RE = /^[a-zA-Z0-9_-]{1,100}$/;
 
 /**
  * Validate command inputs and defer the interaction.
@@ -65,6 +66,12 @@ async function validateCommand(interaction, opts = {}) {
     }
   }
 
+  if (opts.scope !== undefined && opts.scope !== null) {
+    if (!SCOPE_RE.test(opts.scope)) {
+      return { valid: false, errorString: "Scope must be 1–100 alphanumeric characters, dashes, or underscores." };
+    }
+  }
+
   if (opts.duration) {
     if (opts.duration.length > 20) {
       return { valid: false, errorString: "Duration is too long. Example: \"7d\", \"2m\", \"1y\"." };
@@ -73,9 +80,19 @@ async function validateCommand(interaction, opts = {}) {
     if (!split || split.length !== 2) {
       return { valid: false, errorString: 'Invalid time format! Example format: "7d" where "d" = days, "m" = months, "y" = years.' };
     }
+    const num = parseInt(split[0], 10);
+    if (isNaN(num) || num <= 0) {
+      return { valid: false, errorString: "Duration must be a positive number." };
+    }
     const type = split[1].toLowerCase();
     if (!DURATION_UNITS.includes(type)) {
       return { valid: false, errorString: 'Please use "d" (days), "m" (months), "y" (years), or "h" (hours) for duration' };
+    }
+    // Cap at 10 years to prevent absurd ban durations
+    const MAX_DAYS = 3650;
+    const dayEquiv = type === "y" ? num * 365 : type === "m" ? num * 30 : type === "h" ? num / 24 : num;
+    if (dayEquiv > MAX_DAYS) {
+      return { valid: false, errorString: "Duration cannot exceed 10 years." };
     }
   }
 
@@ -85,7 +102,7 @@ async function validateCommand(interaction, opts = {}) {
   // --- Post-defer state checks (async, editReply on failure) ---
 
   if (opts.requireApiKey) {
-    if (!openCloud.hasApiKey(opts.universeId)) {
+    if (!openCloud.hasApiKey(interaction.guildId, opts.universeId)) {
       await interaction.editReply({ embeds: [apiCache.createMissingApiKeyEmbed(opts.universeId)] });
       return { valid: false, deferred: true };
     }
@@ -107,6 +124,7 @@ async function validateCommand(interaction, opts = {}) {
 module.exports = { validateCommand, validateNlpPrerequisites };
 
 const COOLDOWN_MS = 3_000;
+const MAX_COOLDOWN_KEYS = 10_000;
 const lastCommandTime = new Map(); // userId → timestamp
 
 /**
@@ -140,9 +158,10 @@ async function validateNlpPrerequisites(message) {
     await _replyEmbed(message, "Slow down", `Please wait **${(remaining / 1000).toFixed(1)}s** before sending another command.`, 0xffa500);
     return { valid: false };
   }
+  if (lastCommandTime.size >= MAX_COOLDOWN_KEYS) lastCommandTime.clear();
   lastCommandTime.set(message.author.id, now);
 
-  if (!llmCache.hasLlmKey()) {
+  if (!llmCache.hasLlmKey(message.guildId)) {
     await _replyEmbed(message, "Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
     return { valid: false };
   }

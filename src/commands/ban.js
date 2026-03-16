@@ -1,7 +1,7 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
-const { buildBanEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildBanEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -58,6 +58,10 @@ module.exports = {
     const duration = interaction?.options?.getString("duration") || args[3] || null;
     const excludeAltAccounts = interaction?.options?.getBoolean("excludealts") || false;
 
+    if (reason && reason.length > 500) {
+      return "Ban reason cannot exceed 500 characters.";
+    }
+
     const check = await validateCommand(interaction, {
       userId, universeId, duration, requireApiKey: true, requireUniverse: true,
     });
@@ -67,7 +71,7 @@ module.exports = {
 
     try {
 
-      const response = await openCloud.BanUser(userId, reason, duration, excludeAltAccounts, universeId, interaction.user.id);
+      const response = await openCloud.BanUser(interaction.guildId, userId, reason, duration, excludeAltAccounts, universeId, interaction.user.id);
 
       if (response.success) {
         pushHistory(interaction.channelId, interaction.user.id, "ban", { userId, reason, duration, excludeAltAccounts, universeId });
@@ -76,7 +80,7 @@ module.exports = {
       await interaction.editReply({ embeds: [buildBanEmbed(response, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo)] });
     } catch (error) {
       log.error("Error in ban command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
     }
   },
 };

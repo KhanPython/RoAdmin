@@ -27,3 +27,10 @@ data/
 logs/
 *.log
 npm-debug.log*
+
+# Temporary files
+.tmp/
+
+# Claude
+CLAUDE.md
+everything-claude-code/

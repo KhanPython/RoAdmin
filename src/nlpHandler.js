@@ -10,7 +10,11 @@ const {
 const openCloud = require("./openCloudAPI");
 const apiCache = require("./utils/apiCache");
 const log = require("./utils/logger");
+const { RateLimiter } = require("./utils/rateLimiter");
 const { processCommand, patchDatastoreValue } = require("./llmProcessor");
+
+// Per-user rate limiter for LLM calls: 5 requests per 60 seconds
+const llmLimiter = new RateLimiter(5, 60_000);
 const { sendPaginatedList } = require("./utils/pagination");
 const {
   buildResultEmbed,
@@ -26,6 +30,7 @@ const {
   buildRemoveFromBoardEmbed,
   formatKeyEntries,
   buildErrorEmbed,
+  buildInternalErrorEmbed,
   buildProcessingEmbed,
 } = require("./utils/formatters");
 const { scheduleAutoDelete } = require("./utils/autoDelete");
@@ -45,10 +50,12 @@ const COMMAND_KEYWORDS = [
 ];
 
 const MAX_HISTORY = 20;
+const MAX_HISTORY_KEYS = 10_000;
 const commandHistory = new Map(); // `${channelId}:${userId}` → [{ action, parameters, timestamp }]
 
 function pushHistory(channelId, userId, action, parameters) {
   const key = `${channelId}:${userId}`;
+  if (!commandHistory.has(key) && commandHistory.size >= MAX_HISTORY_KEYS) return;
   if (!commandHistory.has(key)) commandHistory.set(key, []);
   const history = commandHistory.get(key);
   history.push({ action, parameters, timestamp: new Date().toISOString() });
@@ -85,10 +92,36 @@ function clearChannelHistories(channelIds) {
 }
 
 const universeInfoMap = new Map();
+const MAX_UNIVERSE_INFO_CACHE = 500;
 
 const ALLOWED_ACTIONS = new Set(["ban", "unban", "showData", "listLeaderboard", "removeFromBoard", "checkBan", "listBans", "setData", "updateData", "listKeys"]);
 const MAX_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 600; // ms between consecutive Roblox API calls in a batch
+
+// Type-validate LLM-parsed parameters to mitigate prompt injection
+function validateParsedParams(cmd) {
+  const p = cmd.parameters;
+  if (p.userId !== undefined) {
+    p.userId = Number(p.userId);
+    if (!Number.isFinite(p.userId) || p.userId <= 0 || !Number.isInteger(p.userId)) return "userId must be a positive integer";
+  }
+  if (p.universeId !== undefined) {
+    p.universeId = Number(p.universeId);
+    if (!Number.isFinite(p.universeId) || p.universeId <= 0 || !Number.isInteger(p.universeId)) return "universeId must be a positive integer";
+  }
+  if (p.key !== undefined && typeof p.key !== "string") p.key = String(p.key);
+  if (p.datastoreName !== undefined && typeof p.datastoreName !== "string") p.datastoreName = String(p.datastoreName);
+  if (p.leaderboardName !== undefined && typeof p.leaderboardName !== "string") p.leaderboardName = String(p.leaderboardName);
+  if (p.reason !== undefined && typeof p.reason !== "string") p.reason = String(p.reason);
+  if (p.value !== undefined && typeof p.value !== "string") p.value = String(p.value);
+  if (p.scope !== undefined && typeof p.scope !== "string") p.scope = String(p.scope);
+  if (p.scope !== undefined && !/^[a-zA-Z0-9_-]{1,100}$/.test(p.scope)) return "scope contains invalid characters";
+  // Length caps to prevent abuse
+  for (const strKey of ["key", "datastoreName", "leaderboardName", "reason", "value", "scope", "duration", "field", "newValue"]) {
+    if (typeof p[strKey] === "string" && p[strKey].length > 1000) return `${strKey} exceeds maximum length`;
+  }
+  return null;
+}
 
 // Merge consecutive updateData commands targeting the same entry into one operation
 function mergeConsecutiveUpdateData(commands) {
@@ -137,7 +170,8 @@ async function handleMessage(client, message) {
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
 
-  const textRaw = message.content.replace(/<@!?\d+>/g, "").trim();
+  const MAX_INPUT_LENGTH = 1000;
+  const textRaw = message.content.replace(/<@!?\d+>/g, "").trim().slice(0, MAX_INPUT_LENGTH);
   const textLower = textRaw.toLowerCase();
 
   // About intent - handle before consent/keyword checks (no LLM required, but admin required)
@@ -196,6 +230,14 @@ async function handleMessage(client, message) {
   const prereq = await validateNlpPrerequisites(message);
   if (!prereq.valid) return;
 
+  // Per-user rate limit on LLM calls to prevent cost abuse
+  const llmCheck = llmLimiter.check(`llm:${message.author.id}`);
+  if (!llmCheck.allowed) {
+    const secs = Math.ceil(llmCheck.retryAfter / 1000);
+    await replyEmbed(message, "Slow Down", `You're sending commands too quickly. Try again in ${secs}s.`, 0xffa500);
+    return;
+  }
+
   if (!textRaw) {
     await replyEmbed(message, "How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
     return;
@@ -210,9 +252,9 @@ async function handleMessage(client, message) {
 
   let commands;
   try {
-    const knownUniverses = apiCache.getCachedUniverses();
+    const knownUniverses = apiCache.getCachedUniverses(message.guildId);
     const history = getHistory(message.channel.id, message.author.id);
-    commands = await processCommand(textRaw, knownUniverses, history);
+    commands = await processCommand(textRaw, knownUniverses, history, message.guildId);
   } catch (err) {
     log.error("Unexpected error calling processCommand:", err.message);
     await editThinkingError("Processing Error", "Failed to process your request. Please try again.");
@@ -228,6 +270,14 @@ async function handleMessage(client, message) {
   if (invalidAction) {
     log.warn(`Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
     await editThinkingError("Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
+    return;
+  }
+
+  // Type-validate all LLM-parsed parameters to catch prompt injection
+  const paramError = commands.map(validateParsedParams).find(Boolean);
+  if (paramError) {
+    log.warn(`Rejected command with invalid parameters: ${paramError}`);
+    await editThinkingError("Invalid Parameters", `Parameter validation failed: **${paramError}**`, 0xff0000);
     return;
   }
 
@@ -247,7 +297,7 @@ async function handleMessage(client, message) {
 
   // Reject any universeId not already configured via /setapikey
   const unconfiguredUniverse = commands.find(
-    cmd => cmd.parameters.universeId && !apiCache.hasApiKey(cmd.parameters.universeId)
+    cmd => cmd.parameters.universeId && !apiCache.hasApiKey(message.guildId, cmd.parameters.universeId)
   );
   if (unconfiguredUniverse) {
     await editThinkingError("Unknown Universe", `Universe **${unconfiguredUniverse.parameters.universeId}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
@@ -266,6 +316,7 @@ async function handleMessage(client, message) {
 
   await Promise.all(universeIds.map(async (uid) => {
     try {
+      if (universeInfoMap.size >= MAX_UNIVERSE_INFO_CACHE) universeInfoMap.clear();
       universeInfoMap.set(uid, await openCloud.GetUniverseName(uid));
     } catch (_) { /* icon is optional */ }
   }));
@@ -295,11 +346,6 @@ async function handleMessage(client, message) {
       .setFooter({ text: "This request expires in 60 seconds" })
       .setTimestamp();
   } else {
-    const fields = Object.entries(commands[0].parameters).map(([name, value]) => ({
-      name,
-      value: String(value),
-      inline: true,
-    }));
     const singleDesc = primaryName
       ? `**Experience:** ${primaryName}\n\n${commands[0].confirmation_summary}`
       : commands[0].confirmation_summary;
@@ -307,7 +353,6 @@ async function handleMessage(client, message) {
       .setTitle(`Confirm: ${commands[0].action}`)
       .setDescription(singleDesc)
       .setColor(0xffa500)
-      .addFields(fields)
       .setFooter({ text: "This request expires in 60 seconds" })
       .setTimestamp();
   }
@@ -361,7 +406,7 @@ async function handleMessage(client, message) {
       const resultEmbeds = [];
       for (const cmd of commands) {
         const universeInfo = universeInfoMap.get(cmd.parameters.universeId) ?? { icon: null, name: null };
-        const resultEmbed = await executeAction(cmd.action, cmd.parameters, universeInfo, message.channel, message.author.id);
+        const resultEmbed = await executeAction(cmd.action, cmd.parameters, universeInfo, message.channel, message.author.id, message.guildId);
         if (resultEmbed) resultEmbeds.push(resultEmbed);
         pushHistory(message.channel.id, message.author.id, cmd.action, cmd.parameters);
         // Stagger requests to avoid hitting Roblox rate limits on batches
@@ -381,7 +426,7 @@ async function handleMessage(client, message) {
     } catch (err) {
       log.error("Error executing confirmed command:", err.message);
       await message.channel.send({
-        embeds: [buildEmbed("Execution Error", `Something went wrong: ${err.message}`)],
+        embeds: [buildEmbed("Execution Error", "Something went wrong while executing the command. Please try again.")],
       }).catch(() => {});
     }
   });
@@ -394,7 +439,7 @@ async function handleMessage(client, message) {
 }
 
 // Execute a parsed action and return a result embed (null for paginated actions)
-async function executeAction(action, params, universeInfo, channel, authorId) {
+async function executeAction(action, params, universeInfo, channel, authorId, guildId) {
   try {
     let result;
     const iconUrl = universeInfo?.icon ?? null;
@@ -402,6 +447,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
     switch (action) {
       case "ban":
         result = await openCloud.BanUser(
+          guildId,
           params.userId,
           params.reason,
           params.duration || null,
@@ -418,11 +464,12 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
         }, universeInfo);
 
       case "unban":
-        result = await openCloud.UnbanUser(params.userId, params.universeId);
+        result = await openCloud.UnbanUser(guildId, params.userId, params.universeId);
         return buildUnbanEmbed(result, { userId: params.userId, universeId: params.universeId }, universeInfo);
 
       case "showData": {
         result = await openCloud.GetDataStoreEntry(
+          guildId,
           params.key,
           params.universeId,
           params.datastoreName
@@ -448,7 +495,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
           authorId,
           title: `Leaderboard: ${params.leaderboardName}`,
           iconUrl,
-          fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(params.leaderboardName, params.scope || "global", pt, params.universeId),
+          fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(guildId, params.leaderboardName, params.scope || "global", pt, params.universeId),
           formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });
@@ -457,6 +504,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
 
       case "removeFromBoard":
         result = await openCloud.RemoveOrderedDataStoreData(
+          guildId,
           params.userId,
           params.leaderboardName,
           params.key || String(params.userId),
@@ -471,7 +519,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
         }, universeInfo);
 
       case "checkBan":
-        result = await openCloud.CheckBanStatus(params.userId, params.universeId);
+        result = await openCloud.CheckBanStatus(guildId, params.userId, params.universeId);
         return buildCheckBanEmbed(result, { userId: params.userId, universeId: params.universeId }, universeInfo);
 
       case "listBans":
@@ -479,7 +527,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
           authorId,
           title: `Active Bans - Universe ${params.universeId}`,
           iconUrl,
-          fetchPage: (pt) => openCloud.ListBans(params.universeId, pt),
+          fetchPage: (pt) => openCloud.ListBans(guildId, params.universeId, pt),
           formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });
@@ -489,6 +537,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
         let parsedValue = params.value;
         try { parsedValue = JSON.parse(params.value); } catch (_) { /* keep as string */ }
         result = await openCloud.SetDataStoreEntry(
+          guildId,
           params.key,
           parsedValue,
           params.universeId,
@@ -507,6 +556,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
       case "updateData": {
         // 1. Fetch the current value once (works for both single and merged multi-field updates)
         const fetchResult = await openCloud.GetDataStoreEntry(
+          guildId,
           params.key,
           params.universeId,
           params.datastoreName
@@ -520,17 +570,33 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
           return buildErrorEmbed(`The value for key \"${params.key}\" is not a JSON object (it's a ${typeof currentValue}). Use \`setData\` to replace it entirely.`);
         }
 
-        // 2. Build one combined instruction covering all field changes, then patch in a single LLM call
+        // 2. Build one combined instruction covering all field changes, then patch in a single LLM call.
+        // Sanitize field names and values to strip control characters before they reach the next LLM call.
         const instruction = params.fields
-          .map(f => `Set the field "${f.field}" to ${f.newValue}`)
+          .map(f => {
+            const field = String(f.field).replace(/[\r\n\x00-\x1F"\\]/g, " ").trim().slice(0, 200);
+            const newValue = String(f.newValue).replace(/[\r\n\x00-\x1F]/g, " ").trim().slice(0, 500);
+            return `Set the field "${field}" to ${newValue}`;
+          })
           .join(". ");
-        const { patched, summary } = await patchDatastoreValue(currentValue, instruction);
+        const { patched, summary } = await patchDatastoreValue(currentValue, instruction, guildId);
         if (!patched) {
           return buildErrorEmbed(`Could not apply update: ${summary}`);
         }
 
+        // Safety: verify the LLM only modified the fields that were requested
+        const expectedFields = new Set(params.fields.map(f => f.field));
+        const allKeys = new Set([...Object.keys(currentValue), ...Object.keys(patched)]);
+        for (const k of allKeys) {
+          if (!expectedFields.has(k) && JSON.stringify(currentValue[k]) !== JSON.stringify(patched[k])) {
+            log.warn(`updateData safety check: LLM modified unexpected field "${k}" for key "${params.key}"`);
+            return buildInternalErrorEmbed();
+          }
+        }
+
         // 3. Single write back regardless of how many fields changed
         result = await openCloud.SetDataStoreEntry(
+          guildId,
           params.key,
           patched,
           params.universeId,
@@ -552,7 +618,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
           authorId,
           title: `Keys - ${params.datastoreName}`,
           iconUrl,
-          fetchPage: (pt) => openCloud.ListDataStoreKeys(params.universeId, params.datastoreName, params.scope || "global", pt),
+          fetchPage: (pt) => openCloud.ListDataStoreKeys(guildId, params.universeId, params.datastoreName, params.scope || "global", pt),
           formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });
@@ -563,7 +629,7 @@ async function executeAction(action, params, universeInfo, channel, authorId) {
     }
   } catch (err) {
     log.error(`executeAction error (${action}):`, err.message);
-    return buildErrorEmbed(err.message);
+    return buildErrorEmbed("Something went wrong while executing the command. Please try again.");
   }
 }
 

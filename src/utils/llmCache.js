@@ -1,12 +1,16 @@
-// LLM API key cache - stores Anthropic key in memory, co-persisted in encrypted keystore
+// LLM API key cache - stores Anthropic keys per-guild in memory, co-persisted in encrypted keystore
 
-let _key = null;
+const _keys = new Map(); // guildId → key
 let _skipPersist = false;
 
-const getLlmKey = () => _key || process.env.ANTHROPIC_API_KEY || null;
+const getLlmKey = (guildId) => _keys.get(guildId) ?? null;
 
-const setLlmKey = (key) => {
-  _key = key;
+const setLlmKey = (guildId, key) => {
+  if (key === null || key === undefined) {
+    _keys.delete(guildId);
+  } else {
+    _keys.set(guildId, key);
+  }
   if (!_skipPersist) {
     try {
       const apiCache = require("./apiCache");
@@ -20,17 +24,24 @@ const setLlmKey = (key) => {
 };
 
 // Set key without persisting (used during startup hydration)
-const hydrateLlmKey = (key) => {
+const hydrateLlmKey = (guildId, key) => {
   _skipPersist = true;
-  _key = key;
+  if (key) _keys.set(guildId, key);
   _skipPersist = false;
 };
 
-const hasLlmKey = () => _key !== null || !!process.env.ANTHROPIC_API_KEY;
+const hasLlmKey = (guildId) => _keys.has(guildId) && _keys.get(guildId) !== null;
+
+const clearGuildLlmKey = (guildId) => setLlmKey(guildId, null);
+
+// Returns a plain object snapshot of all guild → key pairs (used by apiCache for persistence)
+const getAllLlmKeys = () => Object.fromEntries(_keys);
 
 module.exports = {
   getLlmKey,
   setLlmKey,
   hydrateLlmKey,
   hasLlmKey,
+  clearGuildLlmKey,
+  getAllLlmKeys,
 };

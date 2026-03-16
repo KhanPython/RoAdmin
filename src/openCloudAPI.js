@@ -1,5 +1,4 @@
 const axios = require("axios").default;
-const { OpenCloud, DataStoreService } = require("rbxcloud");
 const apiCache = require("./utils/apiCache");
 const log = require("./utils/logger");
 const { robloxLimiter } = require("./utils/rateLimiter");
@@ -20,7 +19,7 @@ function checkLimit(universeId) {
   return null;
 }
 
-exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
+exports.GetDataStoreEntry = async function (guildId, key, universeId, datastoreName) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -31,28 +30,31 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
     const path = `universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/global/entries/${encodedKey}`;
     const url = `https://apis.roblox.com/cloud/v2/${path}`;
 
-    log.debug(`GetDataStoreEntry - URL: ${url}`);
-    log.debug(`GetDataStoreEntry - Key: ${key}, Encoded: ${encodedKey}`);
-
     const response = await axios.get(url, {
-      headers: getApiHeaders(universeId),
+      headers: getApiHeaders(guildId, universeId),
     });
-
-    log.debug(`GetDataStoreEntry - Response status: ${response.status}`);
 
     if (response.status === 200) {
       // Check if response is an array (this means we got a list, not a single entry)
       if (Array.isArray(response.data)) {
-        log.debug(`GetDataStoreEntry - Received List/Array. Searching for key "${key}"`);
         // The API returned a list of entries (likely prefix match). We need to find the EXACT entry with ID matching our key.
         const entry = response.data.find(e => e.id === key);
         if (entry) {
           // Now fetch the actual value from the entry path
           try {
+            // Validate path is a safe relative Roblox resource path before use
+            if (
+              !entry.path ||
+              typeof entry.path !== "string" ||
+              !entry.path.startsWith("universes/") ||
+              entry.path.includes("..")
+            ) {
+              log.warn(`GetDataStoreEntry: unexpected entry.path format: "${String(entry.path).slice(0, 100)}"`);
+              return createDataStoreErrorResponse("GetDataStoreEntry", "Unexpected API response format", { data: null });
+            }
             const valueUrl = `https://apis.roblox.com/cloud/v2/${entry.path}`;
-            log.debug(`Fetching actual value from: ${valueUrl}`);
             const valueResponse = await axios.get(valueUrl, {
-              headers: getApiHeaders(universeId),
+              headers: getApiHeaders(guildId, universeId),
             });
             
             let data = valueResponse.data;
@@ -112,7 +114,7 @@ exports.GetDataStoreEntry = async function (key, universeId, datastoreName) {
   }
 };
 
-exports.GetPlayerData = async function (userId, universeId, datastoreName) {
+exports.GetPlayerData = async function (guildId, userId, universeId, datastoreName) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -123,7 +125,7 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName) {
     url.searchParams.append('entryKey', `player_${userId}`);
 
     const response = await axios.get(url.toString(), {
-      headers: getApiHeaders(universeId),
+      headers: getApiHeaders(guildId, universeId),
     });
 
     if (response.status === 200) {
@@ -141,7 +143,7 @@ exports.GetPlayerData = async function (userId, universeId, datastoreName) {
   }
 };
 
-exports.SetPlayerData = async function (userId, value, universeId, datastoreName) {
+exports.SetPlayerData = async function (guildId, userId, value, universeId, datastoreName) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -153,7 +155,7 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
 
     const response = await axios.post(url.toString(), value, {
       headers: {
-        ...getApiHeaders(universeId),
+        ...getApiHeaders(guildId, universeId),
         "Content-Type": "application/json",
       },
     });
@@ -168,40 +170,7 @@ exports.SetPlayerData = async function (userId, value, universeId, datastoreName
   }
 };
 
-exports.IncrementPlayerData = async function (userId, amount, datastoreName) {
-  try {
-    const datastore = DataStoreService.GetDataStore(datastoreName);
-    const [newValue, keyInfo] = await datastore.IncrementAsync(`player_${userId}`, amount);
-    return createSuccessResponse({ newValue });
-  } catch (error) {
-    log.error(`Error incrementing data for user ${userId}:`, error.message);
-    return createDataStoreErrorResponse("IncrementPlayerData", error.message, { newValue: null });
-  }
-};
-
-exports.UpdatePlayerData = async function (userId, updateFunction, datastoreName) {
-  try {
-    const datastore = DataStoreService.GetDataStore(datastoreName);
-    const newValue = await datastore.UpdateAsync(`player_${userId}`, updateFunction);
-    return createSuccessResponse({ newValue });
-  } catch (error) {
-    log.error(`Error updating data for user ${userId}:`, error.message);
-    return createDataStoreErrorResponse("UpdatePlayerData", error.message, { newValue: null });
-  }
-};
-
-exports.RemovePlayerData = async function (userId, datastoreName) {
-  try {
-    const datastore = DataStoreService.GetDataStore(datastoreName);
-    const oldValue = await datastore.RemoveAsync(`player_${userId}`);
-    return createSuccessResponse({ oldValue });
-  } catch (error) {
-    log.error(`Error removing data for user ${userId}:`, error.message);
-    return createDataStoreErrorResponse("RemovePlayerData", error.message, { oldValue: null });
-  }
-};
-
-exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scopeId = "global", pageToken = null, universeId = null) {
+exports.ListOrderedDataStoreEntries = async function (guildId, orderedDatastoreName, scopeId = "global", pageToken = null, universeId = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -216,10 +185,8 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
     }
     
     const response = await axios.get(url.toString(), {
-      headers: getApiHeaders(universeId),
+      headers: getApiHeaders(guildId, universeId),
     });
-
-    log.debug("ListOrderedDataStoreEntries response keys:", Object.keys(response.data));
 
     // Check different possible response structures
     const entries = response.data.orderedDataStoreEntries || response.data.dataStoreEntries || response.data.entries || [];
@@ -237,7 +204,7 @@ exports.ListOrderedDataStoreEntries = async function (orderedDatastoreName, scop
   }
 };
 
-exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreName, key = null, scopeId = "global", universeId = null) {
+exports.RemoveOrderedDataStoreData = async function (guildId, userId, orderedDatastoreName, key = null, scopeId = "global", universeId = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -248,7 +215,7 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/ordered-data-stores/${encodedName}/scopes/${encodeURIComponent(scopeId)}/entries/${encodedKey}`;
 
     const response = await axios.delete(url, {
-      headers: getApiHeaders(universeId),
+      headers: getApiHeaders(guildId, universeId),
     });
 
     if (response.status === 200 || response.status === 204) {
@@ -268,7 +235,7 @@ exports.RemoveOrderedDataStoreData = async function (userId, orderedDatastoreNam
   }
 };
 
-exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreName, scopeId = "global", universeId = null) {
+exports.CheckOrderedDataStoreKey = async function (guildId, keyToFind, orderedDatastoreName, scopeId = "global", universeId = null) {
   const MAX_PAGES = 100;
 
   try {
@@ -278,7 +245,7 @@ exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreNa
     while (pageCount < MAX_PAGES) {
       pageCount++;
 
-      const response = await exports.ListOrderedDataStoreEntries(orderedDatastoreName, scopeId, pageToken, universeId);
+      const response = await exports.ListOrderedDataStoreEntries(guildId, orderedDatastoreName, scopeId, pageToken, universeId);
       
       if (!response.success) {
         return { exists: false, entry: null, message: `Error fetching page: ${response.status}` };
@@ -307,7 +274,7 @@ exports.CheckOrderedDataStoreKey = async function (keyToFind, orderedDatastoreNa
   }
 };
 
-exports.BanUser = async function (userId, reason, duration, excludeAltAccounts = false, universeId = null, discordUserId = null) {
+exports.BanUser = async function (guildId, userId, reason, duration, excludeAltAccounts = false, universeId = null, discordUserId = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -339,7 +306,7 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
     }
 
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${encodeURIComponent(userId)}`;
-    const response = await axios.patch(url, payload, { headers: getApiHeaders(universeId) });
+    const response = await axios.patch(url, payload, { headers: getApiHeaders(guildId, universeId) });
 
     if (response.status === 200) {
       return createSuccessResponse({ expiresDate });
@@ -361,14 +328,14 @@ exports.BanUser = async function (userId, reason, duration, excludeAltAccounts =
   }
 };
 
-exports.UnbanUser = async function (userId, universeId = null) {
+exports.UnbanUser = async function (guildId, userId, universeId = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const payload = { gameJoinRestriction: { active: false } };
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${encodeURIComponent(userId)}`;
 
-    const response = await axios.patch(url, payload, { headers: getApiHeaders(universeId) });
+    const response = await axios.patch(url, payload, { headers: getApiHeaders(guildId, universeId) });
 
     if (response.status === 200) {
       return createSuccessResponse();
@@ -391,12 +358,12 @@ exports.UnbanUser = async function (userId, universeId = null) {
   }
 };
 
-exports.CheckBanStatus = async function (userId, universeId) {
+exports.CheckBanStatus = async function (guildId, userId, universeId) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/${encodeURIComponent(userId)}`;
-    const response = await axios.get(url, { headers: getApiHeaders(universeId) });
+    const response = await axios.get(url, { headers: getApiHeaders(guildId, universeId) });
     if (response.status === 200) {
       const restriction = response.data.gameJoinRestriction ?? {};
       const active = restriction.active ?? false;
@@ -424,7 +391,7 @@ exports.CheckBanStatus = async function (userId, universeId) {
   }
 };
 
-exports.ListBans = async function (universeId, pageToken = null) {
+exports.ListBans = async function (guildId, universeId, pageToken = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
@@ -432,7 +399,7 @@ exports.ListBans = async function (universeId, pageToken = null) {
     url.searchParams.set("filter", "gameJoinRestriction.active==true");
     url.searchParams.set("maxPageSize", "10");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
-    const response = await axios.get(url.toString(), { headers: getApiHeaders(universeId) });
+    const response = await axios.get(url.toString(), { headers: getApiHeaders(guildId, universeId) });
     if (response.status === 200) {
       return createSuccessResponse({
         bans: response.data.userRestrictions || [],
@@ -447,21 +414,21 @@ exports.ListBans = async function (universeId, pageToken = null) {
   }
 };
 
-exports.SetDataStoreEntry = async function (key, value, universeId, datastoreName, scope = "global") {
+exports.SetDataStoreEntry = async function (guildId, key, value, universeId, datastoreName, scope = "global") {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const encodedKey = encodeURIComponent(key);
     const entryUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries/${encodedKey}`;
     try {
-      const response = await axios.patch(entryUrl, { value }, { headers: getApiHeaders(universeId) });
+      const response = await axios.patch(entryUrl, { value }, { headers: getApiHeaders(guildId, universeId) });
       if (response.status === 200 || response.status === 201) return createSuccessResponse();
     } catch (patchErr) {
       if (patchErr.response?.status !== 404) throw patchErr;
       // Key doesn't exist yet - create it
       const createUrl = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries`);
       createUrl.searchParams.set("id", key);
-      const postResponse = await axios.post(createUrl.toString(), { value }, { headers: getApiHeaders(universeId) });
+      const postResponse = await axios.post(createUrl.toString(), { value }, { headers: getApiHeaders(guildId, universeId) });
       if (postResponse.status === 200 || postResponse.status === 201) return createSuccessResponse();
     }
     return createDataStoreErrorResponse("SetDataStoreEntry", "Unexpected response from API");
@@ -472,14 +439,14 @@ exports.SetDataStoreEntry = async function (key, value, universeId, datastoreNam
   }
 };
 
-exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "global", pageToken = null) {
+exports.ListDataStoreKeys = async function (guildId, universeId, datastoreName, scope = "global", pageToken = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const url = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries`);
     url.searchParams.set("maxPageSize", "20");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
-    const response = await axios.get(url.toString(), { headers: getApiHeaders(universeId) });
+    const response = await axios.get(url.toString(), { headers: getApiHeaders(guildId, universeId) });
     if (response.status === 200) {
       const raw = response.data.dataStoreEntries || response.data.entries || [];
       const keys = raw.map(e => e.id || e.path?.split("/").pop() || "?");
@@ -493,13 +460,13 @@ exports.ListDataStoreKeys = async function (universeId, datastoreName, scope = "
   }
 };
 
-exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, scope = "global") {
+exports.DeleteDataStoreEntry = async function (guildId, key, universeId, datastoreName, scope = "global") {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const encodedKey = encodeURIComponent(key);
     const url = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries/${encodedKey}`;
-    const response = await axios.delete(url, { headers: getApiHeaders(universeId) });
+    const response = await axios.delete(url, { headers: getApiHeaders(guildId, universeId) });
     if (response.status === 200 || response.status === 204) return createSuccessResponse();
     return createDataStoreErrorResponse("DeleteDataStoreEntry", `Unexpected status: ${response.status}`);
   } catch (error) {
@@ -510,8 +477,8 @@ exports.DeleteDataStoreEntry = async function (key, universeId, datastoreName, s
   }
 };
 
-function getApiHeaders(universeId) {
-  const apiKey = apiCache.getApiKey(universeId);
+function getApiHeaders(guildId, universeId) {
+  const apiKey = apiCache.getApiKey(guildId, universeId);
   if (!apiKey) {
     throw new Error(`API key not found in cache for universe ${universeId}. Use /setapikey command to set it.`);
   }
@@ -582,6 +549,8 @@ function logError(context, error) {
   log.error(`[${context}] Status: ${error.response?.status} - ${error.message}`);
 }
 
+const MAX_DURATION_SECONDS = 10 * 365 * 24 * 60 * 60; // 10 years
+
 function parseDuration(duration) {
   if (!duration) return null;
   if (duration.length > 20) return null;
@@ -589,6 +558,7 @@ function parseDuration(duration) {
   try {
     const split = duration.match(/\d+|\D+/g);
     let time = parseInt(split[0]);
+    if (isNaN(time) || time <= 0) return null;
     const type = split[1]?.toLowerCase() || "d";
 
     if (type === "y") {
@@ -603,6 +573,7 @@ function parseDuration(duration) {
       throw new Error(`Unrecognised duration unit "${split[1]}". Use d (days), m (months), y (years), or h (hours).`);
     }
 
+    if (time > MAX_DURATION_SECONDS) return null;
     return time;
   } catch (e) {
     return null;
@@ -619,7 +590,7 @@ exports.GetUniverseName = async function (universeId) {
     
     if (detailsResponse.data && detailsResponse.data.data && detailsResponse.data.data[0]) {
       const gameData = detailsResponse.data.data[0];
-      const name = gameData.name || "Unknown Universe";
+      const name = (typeof gameData.name === "string" && gameData.name.trim()) ? gameData.name : "Unknown Universe";
       const rootPlaceId = gameData.rootPlaceId || "unknown";
       const displayName = `[${name} (${rootPlaceId})](https://www.roblox.com/games/${rootPlaceId})`;
       
@@ -672,6 +643,7 @@ exports.setApiKey = apiCache.setApiKey;
 exports.getApiKey = apiCache.getApiKey;
 exports.hasApiKey = apiCache.hasApiKey;
 exports.clearApiKey = apiCache.clearApiKey;
+exports.clearGuildApiKeys = apiCache.clearGuildApiKeys;
 exports.getCachedUniverseIds = apiCache.getCachedUniverseIds;
 exports.setUniverseName = apiCache.setUniverseName;
 exports.getCachedUniverses = apiCache.getCachedUniverses;

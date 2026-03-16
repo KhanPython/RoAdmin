@@ -15,6 +15,7 @@ module.exports = {
   category: "Privacy",
   description: "Delete data the bot stores about you or this server",
   slash: "both",
+  guildOnly: true,
   permissions: ["ADMINISTRATOR"],
   options: [
     {
@@ -41,11 +42,11 @@ module.exports = {
           "\u2022 Your NLP command history across all channels\n\n" +
           "This action cannot be undone."
         : "This will delete:\n" +
-          "\u2022 All stored Roblox API keys for every universe\n" +
-          "\u2022 The Anthropic LLM API key\n" +
+          "\u2022 All stored Roblox API keys for every universe on this server\n" +
+          "\u2022 The Anthropic LLM API key for this server\n" +
           "\u2022 Data processing consent for this server\n" +
           "\u2022 All NLP command history for this server's channels\n\n" +
-          "**All administrators will need to reconfigure the bot after this.**\n" +
+          "**All administrators will need to reconfigure API keys after this.**\n" +
           "This action cannot be undone.";
 
     const embed = new EmbedBuilder()
@@ -96,13 +97,13 @@ module.exports = {
         deleted.push(`Command history (${count} entries)`);
       } else {
         // Server-wide wipe
-        apiCache.clearAllApiKeys();
-        deleted.push("All API keys");
-
-        llmCache.setLlmKey(null);
-        deleted.push("LLM API key");
-
         if (guild) {
+          apiCache.clearGuildApiKeys(guild.id);
+          deleted.push("All API keys for this server");
+
+          llmCache.clearGuildLlmKey(guild.id);
+          deleted.push("LLM API key");
+
           apiCache.revokeConsent(guild.id);
           deleted.push("Data processing consent");
 

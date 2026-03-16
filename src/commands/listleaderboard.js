@@ -2,7 +2,7 @@ const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
 const { sendPaginatedList } = require("../utils/pagination");
-const { formatLeaderboardEntries, buildErrorEmbed } = require("../utils/formatters");
+const { formatLeaderboardEntries, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 
 const ENTRIES_PER_PAGE = 10;
@@ -47,7 +47,7 @@ module.exports = {
     const scopeId = interaction?.options?.getString("scope") || args[2] || "global";
 
     const check = await validateCommand(interaction, {
-      universeId, requireApiKey: true, requireUniverse: true,
+      universeId, scope: scopeId, requireApiKey: true, requireUniverse: true,
     });
     if (!check.valid) return check.errorString;
 
@@ -61,14 +61,14 @@ module.exports = {
         authorId: user.id,
         title: `Leaderboard - ${leaderboardName}`,
         iconUrl: universeInfo.icon ?? null,
-        fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(leaderboardName, scopeId, pt, universeId),
+        fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(interaction.guildId, leaderboardName, scopeId, pt, universeId),
         formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId, scope: scopeId, universeName: universeInfo.name, entriesPerPage: ENTRIES_PER_PAGE }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
         timeoutMs: 5 * 60 * 1000,
       });
     } catch (error) {
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] }).catch(() => {});
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] }).catch(() => {});
     }
   },
 };

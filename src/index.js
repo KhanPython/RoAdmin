@@ -14,9 +14,9 @@ const llmCache = require("./utils/llmCache");
 const log = require("./utils/logger");
 
 // Load persisted API keys and universe names from encrypted keystore
-const { llmKey } = apiCache.loadFromDisk(() => llmCache.getLlmKey());
-if (llmKey) {
-  llmCache.hydrateLlmKey(llmKey);
+const { llmKeys } = apiCache.loadFromDisk(() => llmCache.getAllLlmKeys());
+for (const [guildId, key] of Object.entries(llmKeys)) {
+  llmCache.hydrateLlmKey(guildId, key);
 }
 
 const discordToken = process.env.DISCORD_TOKEN;
@@ -59,11 +59,16 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isModalSubmit()) return;
 
   if (interaction.customId === "setllmkey_modal") {
-    const { EmbedBuilder, MessageFlags } = require("discord.js");
+    const { EmbedBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
     const Anthropic = require("@anthropic-ai/sdk");
     const keystore = require("./utils/keystore");
 
-    const apiKey = interaction.fields.getTextInputValue("llmkey_input");
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      await interaction.reply({ content: "❌ Administrator permission is required.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const apiKey = interaction.fields.getTextInputValue("llmkey_input").trim();
 
     if (!apiKey || apiKey.trim().length === 0) {
       await interaction.reply({
@@ -83,7 +88,7 @@ client.on("interactionCreate", async (interaction) => {
         messages: [{ role: "user", content: "test" }],
       });
     } catch (err) {
-      llmCache.setLlmKey(null);
+      llmCache.setLlmKey(interaction.guildId, null);
       const safeReason =
         err.status === 401 ? "The API key was rejected by Anthropic (invalid or revoked)." :
         err.status === 429 ? "Anthropic rate limit reached. Please wait a moment and try again." :
@@ -101,7 +106,7 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    const persisted = llmCache.setLlmKey(apiKey);
+    const persisted = llmCache.setLlmKey(interaction.guildId, apiKey);
     const diskFailed = keystore.isEnabled() && !persisted;
 
     await interaction.editReply({
@@ -136,10 +141,21 @@ client.on("interactionCreate", async (interaction) => {
 
   const openCloud = require("./openCloudAPI");
   const keystore = require("./utils/keystore");
-  const { EmbedBuilder, MessageFlags } = require("discord.js");
+  const { EmbedBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
+
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    await interaction.reply({ content: "❌ Administrator permission is required.", flags: MessageFlags.Ephemeral });
+    return;
+  }
 
   const universeId = Number(interaction.customId.replace("setapikey_modal_", ""));
-  const apiKey = interaction.fields.getTextInputValue("apikey_input");
+
+  if (!Number.isFinite(universeId) || universeId <= 0 || !Number.isInteger(universeId)) {
+    await interaction.reply({ content: "❌ Invalid universe ID.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const apiKey = interaction.fields.getTextInputValue("apikey_input").trim();
 
   if (!apiKey || apiKey.trim().length === 0) {
     await interaction.reply({
@@ -152,7 +168,20 @@ client.on("interactionCreate", async (interaction) => {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   try {
-    const persisted = openCloud.setApiKey(universeId, apiKey);
+    // Validate the API key against Roblox API before storing
+    try {
+      const axios = require("axios");
+      const testUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/dummy/scopes/global/entries/test`;
+      await axios.get(testUrl, {
+        headers: { "x-api-key": apiKey },
+        validateStatus: (status) => status === 200 || status === 404,
+      });
+    } catch (apiKeyError) {
+      throw new Error("API key is invalid or unauthorized for this universe");
+    }
+
+    // Key validated — now persist it
+    const persisted = openCloud.setApiKey(interaction.guildId, universeId, apiKey);
 
     let universeInfo;
     try {
@@ -161,18 +190,6 @@ client.on("interactionCreate", async (interaction) => {
     } catch (verifyError) {
       log.warn("Universe verification failed:", verifyError.message);
       universeInfo = { name: `Universe ${universeId}`, icon: null };
-    }
-
-    try {
-      const axios = require("axios");
-      const testUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/dummy/scopes/global/entries/test`;
-      await axios.get(testUrl, {
-        headers: { "x-api-key": apiKey },
-        validateStatus: (status) => status !== 401 && status !== 403,
-      });
-    } catch (apiKeyError) {
-      openCloud.clearApiKey(universeId);
-      throw new Error("API key is invalid or unauthorized for this universe");
     }
 
     const diskFailed = keystore.isEnabled() && !persisted;

@@ -2,7 +2,7 @@ const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
 const { sendPaginatedList } = require("../utils/pagination");
-const { formatBanEntries, buildErrorEmbed } = require("../utils/formatters");
+const { formatBanEntries, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -46,7 +46,7 @@ module.exports = {
         authorId: user.id,
         title: `Active Bans - ${universeInfo.name}`,
         iconUrl: universeInfo.icon ?? null,
-        fetchPage: (pt) => openCloud.ListBans(universeId, pt),
+        fetchPage: (pt) => openCloud.ListBans(interaction.guildId, universeId, pt),
         formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo.name }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
@@ -54,7 +54,7 @@ module.exports = {
       });
     } catch (error) {
       log.error("Error in listbans command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] }).catch(() => {});
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] }).catch(() => {});
     }
   },
 };

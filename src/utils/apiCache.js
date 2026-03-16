@@ -8,6 +8,11 @@ const consentCache = {};
 const universeIconCache = {};
 const ICON_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+// Composite key for guild-scoped API key storage (prevents cross-server key leakage)
+function _guildKey(guildId, universeId) {
+  return `${guildId}:${universeId}`;
+}
+
 const { MessageFlags } = require("discord.js");
 const keystore = require("./keystore");
 const log = require("./logger");
@@ -26,18 +31,17 @@ function safeAssign(target, source) {
   }
 }
 
-let _llmKeyRef = null;
-let _llmKeyGetter = null;
+let _llmKeysGetter = null;
 
-// Serialize caches + LLM key and write to encrypted keystore
+// Serialize caches + per-guild LLM keys and write to encrypted keystore
 function persistToDisk() {
   const data = {
     apiKeys: { ...apiKeyCache },
     universeNames: { ...universeNameCache },
   };
-  if (_llmKeyGetter) {
-    const llmKey = _llmKeyGetter();
-    if (llmKey) data.llmKey = llmKey;
+  if (_llmKeysGetter) {
+    const llmKeys = _llmKeysGetter();
+    if (llmKeys && Object.keys(llmKeys).length > 0) data.llmKeys = llmKeys;
   }
   if (Object.keys(consentCache).length > 0) {
     data.consent = { ...consentCache };
@@ -46,13 +50,23 @@ function persistToDisk() {
 }
 
 // Load keys and universe names from encrypted keystore into memory (call once at startup)
-function loadFromDisk(llmKeyGetter) {
-  _llmKeyGetter = llmKeyGetter || null;
+function loadFromDisk(llmKeysGetter) {
+  _llmKeysGetter = llmKeysGetter || null;
 
   const data = keystore.loadKeystore();
 
   if (data.apiKeys) {
-    safeAssign(apiKeyCache, data.apiKeys);
+    // Only load guild-scoped keys (format "guildId:universeId"); skip legacy un-scoped keys
+    const scoped = {};
+    for (const [k, v] of Object.entries(data.apiKeys)) {
+      if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+      if (k.includes(":")) {
+        scoped[k] = v;
+      } else {
+        log.warn(`Skipping legacy un-scoped API key for universe ${k} — re-enter via /setapikey`);
+      }
+    }
+    safeAssign(apiKeyCache, scoped);
   }
   if (data.universeNames) {
     safeAssign(universeNameCache, data.universeNames);
@@ -61,26 +75,27 @@ function loadFromDisk(llmKeyGetter) {
     safeAssign(consentCache, data.consent);
   }
 
-  return { llmKey: data.llmKey || null };
+  return { llmKeys: data.llmKeys || {} };
 }
 
-function getApiKey(universeId) {
-  return apiKeyCache[universeId] || null;
+function getApiKey(guildId, universeId) {
+  return apiKeyCache[_guildKey(guildId, universeId)] || null;
 }
 
-function setApiKey(universeId, apiKey) {
-  apiKeyCache[universeId] = apiKey;
+function setApiKey(guildId, universeId, apiKey) {
+  apiKeyCache[_guildKey(guildId, universeId)] = apiKey;
   return persistToDisk();
 }
 
-function hasApiKey(universeId) {
-  return apiKeyCache.hasOwnProperty(universeId);
+function hasApiKey(guildId, universeId) {
+  return Object.prototype.hasOwnProperty.call(apiKeyCache, _guildKey(guildId, universeId));
 }
 
 // Return cached key, or prompt the user to run /setapikey and return null
 async function getOrPromptApiKey(interaction, universeId) {
-  if (hasApiKey(universeId)) {
-    return getApiKey(universeId);
+  const guildId = interaction.guildId;
+  if (hasApiKey(guildId, universeId)) {
+    return getApiKey(guildId, universeId);
   }
 
   await interaction.followUp({
@@ -91,8 +106,16 @@ async function getOrPromptApiKey(interaction, universeId) {
   return null;
 }
 
-function clearApiKey(universeId) {
-  delete apiKeyCache[universeId];
+function clearApiKey(guildId, universeId) {
+  delete apiKeyCache[_guildKey(guildId, universeId)];
+  persistToDisk();
+}
+
+function clearGuildApiKeys(guildId) {
+  const prefix = `${guildId}:`;
+  for (const key of Object.keys(apiKeyCache)) {
+    if (key.startsWith(prefix)) delete apiKeyCache[key];
+  }
   persistToDisk();
 }
 
@@ -101,8 +124,11 @@ function clearAllApiKeys() {
   persistToDisk();
 }
 
-function getCachedUniverseIds() {
-  return Object.keys(apiKeyCache).map(Number);
+function getCachedUniverseIds(guildId) {
+  const prefix = `${guildId}:`;
+  return Object.keys(apiKeyCache)
+    .filter(k => k.startsWith(prefix))
+    .map(k => Number(k.split(":")[1]));
 }
 
 function createMissingApiKeyEmbed(universeId) {
@@ -155,10 +181,14 @@ function setUniverseIcon(universeId, url, ttlMs = ICON_TTL_MS) {
   };
 }
 
-function getCachedUniverses() {
+function getCachedUniverses(guildId) {
+  const prefix = `${guildId}:`;
   return Object.keys(apiKeyCache)
-    .filter(id => universeNameCache[id])
-    .map(id => ({ id: Number(id), name: universeNameCache[id] }));
+    .filter(k => k.startsWith(prefix) && universeNameCache[k.split(":")[1]])
+    .map(k => {
+      const uid = k.split(":")[1];
+      return { id: Number(uid), name: universeNameCache[uid] };
+    });
 }
 
 function setConsent(guildId, userId) {
@@ -185,6 +215,7 @@ module.exports = {
   hasApiKey,
   getOrPromptApiKey,
   clearApiKey,
+  clearGuildApiKeys,
   clearAllApiKeys,
   getCachedUniverseIds,
   createMissingApiKeyEmbed,

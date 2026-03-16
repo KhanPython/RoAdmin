@@ -1,6 +1,6 @@
 const { AttachmentBuilder, ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const { buildShowDataEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildShowDataEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -51,7 +51,7 @@ module.exports = {
     try {
 
       // Get datastore entry
-      const playerDataResult = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
+      const playerDataResult = await openCloud.GetDataStoreEntry(interaction.guildId, key, universeId, datastoreName);
       
       if (!playerDataResult.success) {
         await interaction.editReply({
@@ -83,7 +83,7 @@ module.exports = {
       return;
     } catch (error) {
       log.error("Error in showData command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
     }
   },
 };

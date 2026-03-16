@@ -100,22 +100,37 @@ RoAdmin/
 │   ├── openCloudAPI.js       # Core Roblox Open Cloud API wrapper (ban, datastore, messaging)
 │   ├── robloxUserInfo.js     # Fetches Roblox user info via public API (username, avatar)
 │   ├── robloxMessageAPI.js   # Roblox Messaging Service integration
+│   ├── nlpHandler.js         # Discord message handler - routes @mentions to LLM processing
+│   ├── llmProcessor.js       # LLM intent parsing, confirmation flow, and command dispatch
 │   ├── commands/             # Discord slash command handlers (one file per command)
 │   │   ├── ban.js
 │   │   ├── unban.js
+│   │   ├── checkban.js
+│   │   ├── listbans.js
 │   │   ├── setapikey.js
+│   │   ├── setllmkey.js
 │   │   ├── showData.js
+│   │   ├── setdata.js
+│   │   ├── deletedata.js
+│   │   ├── listkeys.js
 │   │   ├── listleaderboard.js
-│   │   └── removeFromBoard.js
+│   │   ├── removeFromBoard.js
+│   │   ├── forgetme.js
+│   │   └── about.js
 │   └── utils/
 │       ├── apiCache.js       # API key cache with encrypted persistence + consent management
 │       ├── keystore.js       # AES-256-GCM encrypted file I/O for persisting keys
 │       ├── llmCache.js       # Anthropic API key cache (co-persisted in keystore)
 │       ├── logger.js         # Structured logger with LOG_LEVEL gating
 │       ├── rateLimiter.js    # Sliding window rate limiter (per-universe)
+│       ├── commandValidator.js  # Input validation helpers shared across commands
+│       ├── formatters.js     # Embed builders and response formatters
+│       ├── pagination.js     # Paginated list helper for Discord button navigation
+│       ├── autoDelete.js     # Auto-deletes bot messages after a configurable delay
 │       └── universeUtils.js  # Universe ID validation helpers
 ├── .github/workflows/
 │   └── deploy.yml            # CI/CD: SSH deploy to GCP VM on push to master
+├── ecosystem.config.js       # PM2 app configuration (log paths, restart policy)
 ├── assets/
 │   └── Logo.png
 ├── package.json
@@ -241,11 +256,18 @@ Discord embeds have strict character limits. When displaying datastore values or
 |---------|----------|---------------|
 | `/ban` | Moderation | `userid`, `reason`, `universeid`, `duration` (opt), `excludealts` (opt) |
 | `/unban` | Moderation | `userid`, `universeid` |
+| `/checkban` | Moderation | `userid`, `universeid` |
+| `/listbans` | Moderation | `universeid` |
 | `/setapikey` | Config | `universeid`, `apikey` |
+| `/setllmkey` | Config | `apikey` |
 | `/showData` | Player Data | `key`, `universeid`, `datastorename` |
-| `/listleaderboard` | Debugging | `leaderboardname`, `universeid`, `scope` (opt) |
-| `/removeFromBoard` | Moderation | `userid`, `leaderboardname`, `universeid`, `key` (opt) |
+| `/setdata` | Player Data | `key`, `universeid`, `datastore`, `value`, `scope` (opt) |
+| `/deletedata` | Player Data | `key`, `universeid`, `datastore`, `scope` (opt) |
+| `/listkeys` | Player Data | `universeid`, `datastore`, `scope` (opt) |
+| `/listleaderboard` | Leaderboards | `leaderboard`, `universeid`, `scope` (opt) |
+| `/removeFromBoard` | Leaderboards | `userid`, `leaderboard`, `universeid`, `key` (opt) |
 | `/forgetme` | Privacy | `scope` (opt: `"personal"` or `"server"`) |
+| `/about` | Info | — |
 
 ---
 
@@ -277,10 +299,11 @@ All log output goes through `src/utils/logger.js` which gates by `LOG_LEVEL`. In
 **Production** is deployed automatically on every push to `master` via `.github/workflows/deploy.yml`:
 
 1. SSH into the GCP VM.
-2. `git stash && git pull origin master`
-3. Overwrite `.env` with `DISCORD_TOKEN` and `ENCRYPTION_KEY` from GitHub Secrets.
-4. `npm install --production`
-5. `pm2 restart RoAdmin || pm2 start . --name RoAdmin && pm2 save`
+2. `git fetch --all && git reset --hard origin/master && git clean -fd`
+3. Overwrite `.env` with `DISCORD_TOKEN`, `ENCRYPTION_KEY`, and `NODE_ENV=production` from GitHub Secrets.
+4. `npm install --omit=dev`
+5. `pm2 kill` to clear stale daemon state, then `pm2 start ecosystem.config.js`
+6. `pm2 save` to persist process list across VM reboots.
 
 Required GitHub Secrets: `REMOTE_HOST`, `REMOTE_USER`, `SSH_PRIVATE_KEY`, `DISCORD_TOKEN`, `ENCRYPTION_KEY`.
 

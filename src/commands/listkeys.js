@@ -2,7 +2,7 @@ const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
 const { sendPaginatedList } = require("../utils/pagination");
-const { formatKeyEntries, buildErrorEmbed } = require("../utils/formatters");
+const { formatKeyEntries, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -46,7 +46,7 @@ module.exports = {
     const scope = interaction?.options?.getString("scope") || args[2] || "global";
 
     const check = await validateCommand(interaction, {
-      universeId, datastoreName, requireApiKey: true, requireUniverse: true,
+      universeId, datastoreName, scope, requireApiKey: true, requireUniverse: true,
     });
     if (!check.valid) return check.errorString;
 
@@ -60,7 +60,7 @@ module.exports = {
         authorId: user.id,
         title: `Keys - ${datastoreName}`,
         iconUrl: universeInfo.icon ?? null,
-        fetchPage: (pt) => openCloud.ListDataStoreKeys(universeId, datastoreName, scope, pt),
+        fetchPage: (pt) => openCloud.ListDataStoreKeys(interaction.guildId, universeId, datastoreName, scope, pt),
         formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId, scope, universeName: universeInfo.name }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
@@ -68,7 +68,7 @@ module.exports = {
       });
     } catch (error) {
       log.error("Error in listkeys command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] }).catch(() => {});
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] }).catch(() => {});
     }
   },
 };

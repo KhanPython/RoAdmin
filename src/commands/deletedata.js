@@ -1,7 +1,7 @@
 const { ApplicationCommandOptionType, AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlpHandler");
-const { buildDeleteDataEmbed, buildErrorEmbed } = require("../utils/formatters");
+const { buildDeleteDataEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -52,7 +52,7 @@ module.exports = {
     const scope = interaction?.options?.getString("scope") || args[3] || "global";
 
     const check = await validateCommand(interaction, {
-      key, universeId, datastoreName, requireApiKey: true, requireUniverse: true,
+      key, universeId, datastoreName, scope, requireApiKey: true, requireUniverse: true,
     });
     if (!check.valid) return check.errorString;
 
@@ -116,10 +116,10 @@ module.exports = {
         await i.update({ embeds: [processingEmbed], components: [] });
 
         // Snapshot current value before deleting so it can be attached as a file
-        const snapshot = await openCloud.GetDataStoreEntry(key, universeId, datastoreName);
+        const snapshot = await openCloud.GetDataStoreEntry(interaction.guildId, key, universeId, datastoreName);
         const hasSnapshot = snapshot.success && snapshot.data !== null;
 
-        const result = await openCloud.DeleteDataStoreEntry(key, universeId, datastoreName, scope);
+        const result = await openCloud.DeleteDataStoreEntry(interaction.guildId, key, universeId, datastoreName, scope);
 
         if (result.success) {
           pushHistory(interaction.channelId, interaction.user.id, "deleteData", { key, universeId, datastoreName, scope });
@@ -144,7 +144,7 @@ module.exports = {
       });
     } catch (error) {
       log.error("Error in deletedata command:", error.message);
-      await interaction.editReply({ embeds: [buildErrorEmbed(error.message)] });
+      await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
     }
   },
 };

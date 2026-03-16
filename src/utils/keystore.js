@@ -9,15 +9,40 @@ const KEYSTORE_DIR = path.join(__dirname, "..", "..", "data");
 const KEYSTORE_PATH = path.join(KEYSTORE_DIR, "keystore.enc");
 const KEYSTORE_TMP = path.join(KEYSTORE_DIR, "keystore.enc.tmp");
 const KEYSTORE_BAK = path.join(KEYSTORE_DIR, "keystore.enc.bak");
+const KEYSTORE_SALT_PATH = path.join(KEYSTORE_DIR, "keystore.salt");
 
 const HKDF_INFO = "voltbot-keystore-v1";
+// Legacy static salt used before per-deployment salts were introduced — kept only for migration.
+const LEGACY_HKDF_SALT = Buffer.from("voltbot-keystore-salt-v1");
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
 let _derivedKey = null;
 let _enabled = false;
 
-// Derive the data encryption key from the master secret using HKDF (called once)
+// Load the per-deployment salt from disk, or generate and persist a fresh one.
+function _loadOrCreateSalt() {
+  try {
+    fs.mkdirSync(KEYSTORE_DIR, { recursive: true });
+    if (fs.existsSync(KEYSTORE_SALT_PATH)) {
+      const buf = fs.readFileSync(KEYSTORE_SALT_PATH);
+      if (buf.length === 32) return { salt: buf, isNew: false };
+      log.warn("keystore.salt has unexpected length — regenerating.");
+    }
+    const salt = crypto.randomBytes(32);
+    fs.writeFileSync(KEYSTORE_SALT_PATH, salt, { mode: 0o600 });
+    return { salt, isNew: true };
+  } catch (err) {
+    log.warn("Salt file I/O failed, using ephemeral salt:", err.message);
+    return { salt: crypto.randomBytes(32), isNew: true };
+  }
+}
+
+function _deriveKeyFromSalt(master, salt) {
+  return Buffer.from(crypto.hkdfSync("sha256", master, salt, HKDF_INFO, 32));
+}
+
+// Derive the data encryption key from the master secret using HKDF (called once).
 function deriveKey() {
   if (_derivedKey) return _derivedKey;
 
@@ -29,9 +54,8 @@ function deriveKey() {
   }
 
   const master = Buffer.from(masterHex, "hex");
-  _derivedKey = Buffer.from(
-    crypto.hkdfSync("sha256", master, Buffer.alloc(0), HKDF_INFO, 32)
-  );
+  const { salt } = _loadOrCreateSalt();
+  _derivedKey = _deriveKeyFromSalt(master, salt);
   _enabled = true;
   return _derivedKey;
 }
@@ -52,14 +76,10 @@ function encrypt(plaintext) {
   return Buffer.concat([iv, authTag, encrypted]);
 }
 
-// Decrypt a buffer produced by encrypt(), or null on failure
-function decrypt(buffer) {
-  const key = deriveKey();
+// Decrypt a buffer using an explicit key (supports both current and legacy keys).
+function _decryptWithKey(buffer, key) {
   if (!key) return null;
-
-  if (buffer.length < IV_LENGTH + AUTH_TAG_LENGTH) {
-    return null;
-  }
+  if (buffer.length < IV_LENGTH + AUTH_TAG_LENGTH) return null;
 
   const iv = buffer.subarray(0, IV_LENGTH);
   const authTag = buffer.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
@@ -79,9 +99,19 @@ function decrypt(buffer) {
   }
 }
 
-// Load and decrypt the keystore from disk (→ {} on first run / failure)
+// Decrypt a buffer produced by encrypt(), or null on failure.
+function decrypt(buffer) {
+  return _decryptWithKey(buffer, deriveKey());
+}
+
+// Load and decrypt the keystore from disk (→ {} on first run / failure).
+// On deployments upgrading from the legacy static salt, automatically migrates
+// the keystore to the new per-deployment random salt.
 function loadKeystore() {
-  deriveKey();
+  // Determine whether the salt file already existed before this call.
+  const saltExistedBefore = fs.existsSync(KEYSTORE_SALT_PATH);
+
+  deriveKey(); // ensures _enabled and _derivedKey are set
 
   if (!_enabled) {
     log.info("No ENCRYPTION_KEY configured - running in memory-only mode");
@@ -95,7 +125,28 @@ function loadKeystore() {
 
   try {
     const raw = fs.readFileSync(KEYSTORE_PATH);
-    const plaintext = decrypt(raw);
+    let plaintext = decrypt(raw);
+
+    // Migration path: salt file was just created (new random salt) but there is an
+    // existing keystore that was encrypted with the legacy static salt.
+    if (plaintext === null && !saltExistedBefore) {
+      log.info("Attempting keystore migration from legacy static salt...");
+      const masterHex = process.env.ENCRYPTION_KEY;
+      const master = Buffer.from(masterHex, "hex");
+      const legacyKey = _deriveKeyFromSalt(master, LEGACY_HKDF_SALT);
+      plaintext = _decryptWithKey(raw, legacyKey);
+
+      if (plaintext !== null) {
+        log.info("Migration successful - re-encrypting keystore with per-deployment salt.");
+        const data = JSON.parse(plaintext);
+        saveKeystore(data); // persists with the new random salt
+        const keyCount = data.apiKeys ? Object.keys(data.apiKeys).length : 0;
+        log.info(`Loaded ${keyCount} API key(s) from encrypted storage (migrated from legacy salt).`);
+        return data;
+      }
+
+      log.warn("Legacy salt migration failed - master key may have changed. Backing up and starting fresh.");
+    }
 
     if (plaintext === null) {
       log.warn("Failed to decrypt keystore - master key may have changed. Backing up and starting fresh.");
@@ -117,7 +168,7 @@ function loadKeystore() {
   }
 }
 
-// Encrypt and atomically write keystore to disk (write → tmp → rename)
+// Encrypt and atomically write keystore to disk (write → tmp → rename).
 function saveKeystore(data) {
   deriveKey();
   if (!_enabled) return true; // not a failure - persistence just isn't configured
@@ -129,7 +180,7 @@ function saveKeystore(data) {
     const encrypted = encrypt(plaintext);
     if (!encrypted) return false;
 
-    fs.writeFileSync(KEYSTORE_TMP, encrypted);
+    fs.writeFileSync(KEYSTORE_TMP, encrypted, { mode: 0o600 });
     fs.renameSync(KEYSTORE_TMP, KEYSTORE_PATH);
     return true;
   } catch (err) {
