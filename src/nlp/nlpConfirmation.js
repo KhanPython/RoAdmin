@@ -28,7 +28,39 @@ function buildEmbed(title, description, color = 0xff0000) {
  * @param {object}   opts.thinkingReply   - The bot's "thinking" reply to edit
  * @param {Function} opts.pushHistoryFn   - (channelId, userId, action, params) => void
  */
-async function showConfirmationAndExecute({ commands, universeInfoMap, message, thinkingReply, pushHistoryFn }) {
+async function showConfirmationAndExecute({ commands, universeInfoMap, message, thinkingReply, pushHistoryFn, skipConfirmation = false }) {
+  // Read-only commands skip the confirmation dialog to reduce latency.
+  if (skipConfirmation) {
+    try {
+      const processingEmbed = new EmbedBuilder()
+        .setTitle("Processing…")
+        .setDescription("Fetching data, please wait…")
+        .setColor(0x5865f2)
+        .setTimestamp();
+      await thinkingReply.edit({ embeds: [processingEmbed], components: [] });
+
+      const resultEmbeds = [];
+      for (const cmd of commands) {
+        const universeInfo = universeInfoMap.get(cmd.parameters.universeId) ?? { icon: null, name: null };
+        const resultEmbed = await executeAction(cmd.action, cmd.parameters, universeInfo, message.channel, message.author.id, message.guildId);
+        if (resultEmbed) resultEmbeds.push(resultEmbed);
+        pushHistoryFn(message.channel.id, message.author.id, cmd.action, cmd.parameters);
+        if (commands.length > 1) await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+      }
+
+      await thinkingReply.delete().catch(() => {});
+      while (resultEmbeds.length > 0) {
+        const batch = resultEmbeds.splice(0, 10);
+        await message.channel.send({ embeds: batch });
+      }
+    } catch (err) {
+      log.error("Error executing read-only command:", err.message);
+      await message.channel.send({
+        embeds: [buildEmbed("Execution Error", "Something went wrong while executing the command. Please try again.")],
+      }).catch(() => {});
+    }
+    return;
+  }
   const primaryInfo = universeInfoMap.values().next().value ?? {};
   const primaryIcon = primaryInfo.icon ?? null;
   const primaryName = primaryInfo.name ?? null;

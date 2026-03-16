@@ -303,6 +303,10 @@ async function handleMessage(client, message) {
   // Collapse consecutive updateData commands on the same entry into one operation
   commands = mergeConsecutiveUpdateData(commands);
 
+  // Read-only actions carry no mutation risk - skip the confirmation dialog
+  const READ_ONLY_ACTIONS = new Set(["showData", "listKeys", "listLeaderboard", "checkBan", "listBans"]);
+  const allReadOnly = commands.every(cmd => READ_ONLY_ACTIONS.has(cmd.action));
+
   // Hand off to confirmation UI → executor pipeline
   await showConfirmationAndExecute({
     commands,
@@ -310,6 +314,7 @@ async function handleMessage(client, message) {
     message,
     thinkingReply,
     pushHistoryFn: pushHistory,
+    skipConfirmation: allReadOnly,
   });
 }
 

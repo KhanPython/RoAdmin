@@ -19,7 +19,7 @@ const {
   buildErrorEmbed,
   buildInternalErrorEmbed,
 } = require("../utils/formatters");
-const { scheduleAutoDelete } = require("../utils/autoDelete");
+const { scheduleAutoDelete, scheduleDataRedact } = require("../utils/autoDelete");
 
 // Recursively collect the names of all leaf keys that differ between two objects.
 // Arrays are treated as opaque values (compared by JSON string) so only plain
@@ -84,12 +84,12 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
         );
         const showEmbed = buildShowDataEmbed(result, { key: params.key, universeId: params.universeId, datastoreName: params.datastoreName }, universeInfo);
         if (result.success && result.data !== null && result.data !== undefined) {
-          showEmbed.setFooter({ text: "This message will be auto-deleted in 2 minutes" });
+          showEmbed.setFooter({ text: "Data will be redacted in 2 minutes for privacy compliance" });
           const jsonString = JSON.stringify(result.data, null, 2);
           const fileBuffer = Buffer.from(jsonString, "utf-8");
           const attachment = new AttachmentBuilder(fileBuffer, { name: `${params.key}_data.txt` });
           const sentMsg = await channel.send({ embeds: [showEmbed], files: [attachment] });
-          scheduleAutoDelete(sentMsg);
+          scheduleDataRedact(sentMsg);
         } else {
           showEmbed.addFields({ name: "Value", value: "No data found for this key.", inline: false });
           await channel.send({ embeds: [showEmbed] });
