@@ -122,10 +122,16 @@ function formatBanEntries(data, page, { universeName } = {}) {
 // Format JSON into a code-block string safe for embed fields (≤1024 chars)
 function formatJsonValue(data) {
   if (data === null || data === undefined) return "No data";
+  const LIMIT = 1024;
+  const OPEN = "```json\n";   // 8 chars
+  const CLOSE = "\n```";      // 4 chars
+  const TAIL = "\n...(truncated)"; // 15 chars
   const pretty = JSON.stringify(data, null, 2);
-  const block = `\`\`\`json\n${pretty}\n\`\`\``;
-  if (block.length <= 1024) return block;
-  return `\`\`\`json\n${pretty.slice(0, 990)}\n...(truncated)\`\`\``;
+  if (OPEN.length + pretty.length + CLOSE.length <= LIMIT) {
+    return `${OPEN}${pretty}${CLOSE}`;
+  }
+  const maxContent = LIMIT - OPEN.length - TAIL.length - CLOSE.length; // 997
+  return `${OPEN}${pretty.slice(0, maxContent)}${TAIL}${CLOSE}`;
 }
 
 function buildShowDataEmbed(result, { key, universeId, datastoreName }, universeInfo) {
@@ -172,12 +178,14 @@ function buildSetDataEmbed(result, { key, universeId, datastoreName, rawValue, s
 function buildUpdateDataEmbed(result, { key, universeId, datastoreName, summary, scope }, universeInfo) {
   let fields = [];
   if (result.success) {
+    // Treat summary as untrusted (LLM output influenced by datastore content)
+    const safeSummary = String(summary).replace(/[\x00-\x1F<>]/g, "").slice(0, 1024) || "No summary";
     fields.push(
       { name: "Key", value: key, inline: true },
       { name: "Universe ID", value: `\`${universeId}\``, inline: true },
       { name: "Datastore", value: datastoreName, inline: true },
       { name: "Scope", value: scope || "global", inline: true },
-      { name: "Summary", value: summary, inline: false },
+      { name: "Summary", value: safeSummary, inline: false },
     );
   }
 

@@ -13,7 +13,7 @@ module.exports = {
   testOnly: false,
 
   permissions: ["ADMINISTRATOR"],
-  ephemeral: false,
+  ephemeral: true,
   minArgs: 3,
   expectedArgs: "<key> <universeid> <datastore> [scope]",
   guildOnly: true,

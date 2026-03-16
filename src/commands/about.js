@@ -2,10 +2,14 @@ const { EmbedBuilder, MessageFlags } = require("discord.js");
 const apiCache = require("../utils/apiCache");
 const keystore = require("../utils/keystore");
 
+const { version } = require("../../package.json");
+
 module.exports = {
   category: "Info",
   description: "Show bot version, status, and data practices",
   slash: "both",
+  permissions: ["ADMINISTRATOR"],
+  ephemeral: true,
 
   callback: async ({ interaction, client }) => {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -21,7 +25,7 @@ module.exports = {
       .setDescription(app.description || "No description set.")
       .setColor(0x5865f2)
       .addFields(
-        { name: "Version", value: "1.0.0", inline: true },
+        { name: "Version", value: version, inline: true },
         { name: "Uptime", value: uptime, inline: true },
         { name: "Guilds", value: String(client.guilds.cache.size), inline: true },
         { name: "Credential Storage", value: storageMode, inline: true },

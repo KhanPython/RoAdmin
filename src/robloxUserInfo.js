@@ -7,7 +7,7 @@ exports.UserInfoById = async function UserInfoById(userId) {
     const response = await axios.get(`https://users.roblox.com/v1/users/${encodeURIComponent(String(userId))}/`, {
       timeout: REQUEST_TIMEOUT,
     });
-    return { status: "Success", success: true, data: response };
+    return { status: "Success", success: true, data: response.data };
   } catch (err) {
     if (err.response?.status === 404) {
       return { status: "Invalid user ID", success: false, data: null };

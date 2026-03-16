@@ -15,7 +15,7 @@ module.exports = {
   testOnly: false,
 
   permissions: ["ADMINISTRATOR"],
-  ephemeral: false,
+  ephemeral: true,
   minArgs: 2,
   expectedArgs: "<leaderboardName> <universeId> [scope]",
   guildOnly: true,
@@ -61,7 +61,7 @@ module.exports = {
         authorId: user.id,
         title: `Leaderboard - ${leaderboardName}`,
         iconUrl: universeInfo.icon ?? null,
-        fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(interaction.guildId, leaderboardName, scopeId, pt, universeId),
+        fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(interaction.guildId, leaderboardName, scopeId, pt, universeId, ENTRIES_PER_PAGE),
         formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId, scope: scopeId, universeName: universeInfo.name, entriesPerPage: ENTRIES_PER_PAGE }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),

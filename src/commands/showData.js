@@ -12,7 +12,7 @@ module.exports = {
   testOnly: false,
 
   permissions: ["ADMINISTRATOR"],
-  ephemeral: false,
+  ephemeral: true,
   minArgs: 3,
   expectedArgs: "<key> <universeId> <datastore>",
   guildOnly: true,
@@ -67,8 +67,8 @@ module.exports = {
         return;
       }
 
-      // Get universe info
-      const universeInfo = await openCloud.GetUniverseName(universeId);
+      // Use universeInfo already fetched by validateCommand (requireUniverse: true)
+      const universeInfo = check.universeInfo;
 
       // Build metadata embed from shared formatter
       const infoEmbed = buildShowDataEmbed(playerDataResult, { key, universeId, datastoreName }, universeInfo);

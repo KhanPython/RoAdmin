@@ -13,7 +13,6 @@ function _guildKey(guildId, universeId) {
   return `${guildId}:${universeId}`;
 }
 
-const { MessageFlags } = require("discord.js");
 const keystore = require("./keystore");
 const log = require("./logger");
 
@@ -91,20 +90,6 @@ function hasApiKey(guildId, universeId) {
   return Object.prototype.hasOwnProperty.call(apiKeyCache, _guildKey(guildId, universeId));
 }
 
-// Return cached key, or prompt the user to run /setapikey and return null
-async function getOrPromptApiKey(interaction, universeId) {
-  const guildId = interaction.guildId;
-  if (hasApiKey(guildId, universeId)) {
-    return getApiKey(guildId, universeId);
-  }
-
-  await interaction.followUp({
-    content: `🔑 **API Key Missing for Universe ${universeId}**\n\nPlease use the \`/setapikey\` command to store the API key for this universe.\n\`\`\`\n/setapikey <universeId> <apiKey>\n\`\`\``,
-    flags: MessageFlags.Ephemeral,
-  });
-
-  return null;
-}
 
 function clearApiKey(guildId, universeId) {
   delete apiKeyCache[_guildKey(guildId, universeId)];
@@ -213,7 +198,6 @@ module.exports = {
   getApiKey,
   setApiKey,
   hasApiKey,
-  getOrPromptApiKey,
   clearApiKey,
   clearGuildApiKeys,
   clearAllApiKeys,

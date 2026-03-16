@@ -62,15 +62,15 @@ All other secrets are set at runtime via slash commands and held in memory. They
 
 **Register a Roblox universe:**
 ```
-/setapikey universeid:<universeId> apikey:<your-roblox-open-cloud-key>
+/setapikey universeid:<universeId>
 ```
-Run this once per experience you want to manage. The API key must have the appropriate Open Cloud permissions (DataStore read/write, User Restrictions write).
+A secure modal will appear prompting you to paste your API key. Run this once per experience you want to manage. The key must have the appropriate Open Cloud permissions (DataStore read/write, User Restrictions write).
 
 **Register an Anthropic API key (required for NLP):**
 ```
-/setllmkey apikey:<your-anthropic-api-key>
+/setllmkey
 ```
-The bot validates the key by making a test call before storing it.
+A secure modal will appear prompting you to paste your Anthropic API key. The bot validates the key by making a test call before storing it.
 
 ---
 
@@ -82,14 +82,14 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 
 | Command | Parameters | Description |
 |---------|-----------|-------------|
-| `/setapikey` | `universeid`, `apikey` | Register a Roblox Open Cloud API key for a universe |
-| `/setllmkey` | `apikey` | Register the Anthropic API key for NLP processing |
+| `/setapikey` | `universeid` | Register a Roblox Open Cloud API key for a universe. API key is entered via a secure modal. |
+| `/setllmkey` | — | Register the Anthropic API key for NLP processing. Key is entered via a secure modal. |
 
 ### Moderation
 
 | Command | Parameters | Description |
 |---------|-----------|-------------|
-| `/ban` | `userid`, `reason`, `universeid`, `duration`\*, `excludealts`\* | Ban a player. Duration format: `7d`, `2h`, `1m`, `1y`. Omit for permanent. |
+| `/ban` | `userid`, `reason`, `universeid`, `duration`\*, `excludealts`\* | Ban a player. Duration format: `7d` (days), `2h` (hours), `1m` (months), `1y` (years). Omit for permanent. `excludealts`: when `true`, alt accounts are excluded from the ban; when `false` (default), alts are also banned. |
 | `/unban` | `userid`, `universeid` | Remove a player's ban |
 | `/checkban` | `userid`, `universeid` | Check the ban status of a player |
 | `/listbans` | `universeid` | List all active bans in a universe (paginated) |
@@ -98,7 +98,7 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 
 | Command | Parameters | Description |
 |---------|-----------|-------------|
-| `/showData` | `key`, `universeid`, `datastore` | Read a single standard datastore entry by key |
+| `/showData` | `key`, `universeid`, `datastore` | Read a datastore entry by key. Full data is always attached as a `.txt` file. |
 | `/setdata` | `key`, `universeid`, `datastore`, `value`, `scope`\* | Set or update a datastore entry (upsert). Value can be JSON or a plain string. |
 | `/deletedata` | `key`, `universeid`, `datastore`, `scope`\* | Delete a datastore entry. Requires button confirmation; attaches a snapshot of the deleted value as a file. |
 | `/listkeys` | `universeid`, `datastore`, `scope`\* | List all entry keys in a datastore (paginated) |
@@ -114,7 +114,7 @@ All commands require **Administrator** permission and are ephemeral or guild-onl
 
 | Command | Parameters | Description |
 | --- | --- | --- |
-| `/forgetme` | `scope`\* (`"personal"` or `"server"`) | Delete data the bot holds. Personal scope: clears your NLP history. Server scope: wipes all API keys, LLM key, consent, and command history for the guild. |
+| `/forgetme` | `scope`\* (`"personal"` or `"server"`) | Delete data the bot holds. Both scopes require a confirmation button click. **Personal** (default): clears your NLP command history. **Server**: wipes all API keys, LLM key, data processing consent, and command history for the entire guild. |
 
 ### Info
 

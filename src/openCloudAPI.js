@@ -170,16 +170,20 @@ exports.SetPlayerData = async function (guildId, userId, value, universeId, data
   }
 };
 
-exports.ListOrderedDataStoreEntries = async function (guildId, orderedDatastoreName, scopeId = "global", pageToken = null, universeId = null) {
+exports.ListOrderedDataStoreEntries = async function (guildId, orderedDatastoreName, scopeId = "global", pageToken = null, universeId = null, maxPageSize = null) {
   try {
     const limited = checkLimit(universeId);
     if (limited) return limited;
-    
+
     // Construct the correct Open Cloud API path for listing ordered data stores
     const path = `universes/${universeId}/ordered-data-stores/${encodeURIComponent(orderedDatastoreName)}/scopes/${encodeURIComponent(scopeId)}/entries`;
     const url = new URL(`https://apis.roblox.com/cloud/v2/${path}`);
     url.searchParams.append('orderBy', 'value desc');
-    
+
+    if (maxPageSize) {
+      url.searchParams.append('maxPageSize', String(maxPageSize));
+    }
+
     if (pageToken) {
       url.searchParams.append('pageToken', pageToken);
     }
@@ -235,44 +239,6 @@ exports.RemoveOrderedDataStoreData = async function (guildId, userId, orderedDat
   }
 };
 
-exports.CheckOrderedDataStoreKey = async function (guildId, keyToFind, orderedDatastoreName, scopeId = "global", universeId = null) {
-  const MAX_PAGES = 100;
-
-  try {
-    let pageToken = null;
-    let pageCount = 0;
-    
-    while (pageCount < MAX_PAGES) {
-      pageCount++;
-
-      const response = await exports.ListOrderedDataStoreEntries(guildId, orderedDatastoreName, scopeId, pageToken, universeId);
-      
-      if (!response.success) {
-        return { exists: false, entry: null, message: `Error fetching page: ${response.status}` };
-      }
-      
-      const entries = response.entries || [];
-      
-      // Check if key exists on this page
-      const found = entries.find(e => e.id === keyToFind);
-      if (found) {
-        return { exists: true, entry: found, message: `Found on page ${pageCount}` };
-      }
-      
-      // Check for next page
-      if (!response.nextPageToken) {
-        return { exists: false, entry: null, message: `Key not found after checking ${pageCount} pages` };
-      }
-      
-      pageToken = response.nextPageToken;
-    }
-
-    return { exists: false, entry: null, message: `Key not found within first ${MAX_PAGES} pages (limit reached; key may exist beyond this point)` };
-  } catch (error) {
-    log.error("Error checking ordered datastore key:", error.message);
-    return { exists: false, entry: null, message: `Error: ${error.message}` };
-  }
-};
 
 exports.BanUser = async function (guildId, userId, reason, duration, excludeAltAccounts = false, universeId = null, discordUserId = null) {
   try {
@@ -284,6 +250,9 @@ exports.BanUser = async function (guildId, userId, reason, duration, excludeAltA
 
     if (duration) {
       durationSeconds = parseDuration(duration);
+      if (durationSeconds === null) {
+        return createDataStoreErrorResponse("BanUser", `Invalid duration format: "${duration}". Use formats like "7d", "2m", "1y", "24h".`, { expiresDate: null });
+      }
       expiresDate = new Date(Date.now() + durationSeconds * 1000);
       durationString = `${durationSeconds}s`;
     }

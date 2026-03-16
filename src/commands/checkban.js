@@ -13,7 +13,7 @@ module.exports = {
   testOnly: false,
 
   permissions: ["ADMINISTRATOR"],
-  ephemeral: false,
+  ephemeral: true,
   minArgs: 2,
   expectedArgs: "<userId> <universeId>",
   guildOnly: true,

@@ -177,7 +177,10 @@ client.on("interactionCreate", async (interaction) => {
         validateStatus: (status) => status === 200 || status === 404,
       });
     } catch (apiKeyError) {
-      throw new Error("API key is invalid or unauthorized for this universe");
+      const status = apiKeyError.response?.status;
+      if (status === 401) throw new Error("API key is invalid or revoked. Check the key and try again.");
+      if (status === 403) throw new Error("API key is valid but lacks the required permissions for this universe. Enable DataStore read access in the Open Cloud settings.");
+      throw new Error("Could not validate the API key. Check the universe ID and try again.");
     }
 
     // Key validated — now persist it

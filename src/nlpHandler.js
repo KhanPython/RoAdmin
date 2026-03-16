@@ -17,13 +17,11 @@ const { processCommand, patchDatastoreValue } = require("./llmProcessor");
 const llmLimiter = new RateLimiter(5, 60_000);
 const { sendPaginatedList } = require("./utils/pagination");
 const {
-  buildResultEmbed,
   buildBanEmbed,
   buildUnbanEmbed,
   buildCheckBanEmbed,
   formatBanEntries,
   buildShowDataEmbed,
-  formatJsonValue,
   buildSetDataEmbed,
   buildUpdateDataEmbed,
   formatLeaderboardEntries,
@@ -35,6 +33,7 @@ const {
 } = require("./utils/formatters");
 const { scheduleAutoDelete } = require("./utils/autoDelete");
 const { validateNlpPrerequisites } = require("./utils/commandValidator");
+const { version } = require("../package.json");
 
 // Keywords that must appear in the message for it to be forwarded to the LLM.
 // Anything that doesn't match is silently ignored (no API call, no reply).
@@ -203,7 +202,7 @@ async function handleMessage(client, message) {
       .setDescription(app.description || "A Discord bot for managing Roblox experiences via Open Cloud API.")
       .setColor(0x5865f2)
       .addFields(
-        { name: "Version", value: "1.0.0", inline: true },
+        { name: "Version", value: version, inline: true },
         { name: "Uptime", value: uptime, inline: true },
         { name: "Guilds", value: String(client.guilds.cache.size), inline: true },
         { name: "Credential Storage", value: storageMode, inline: true },
@@ -318,7 +317,7 @@ async function handleMessage(client, message) {
     try {
       if (universeInfoMap.size >= MAX_UNIVERSE_INFO_CACHE) universeInfoMap.clear();
       universeInfoMap.set(uid, await openCloud.GetUniverseName(uid));
-    } catch (_) { /* icon is optional */ }
+    } catch (err) { log.debug("Universe info fetch failed:", err.message); }
   }));
 
   // Collapse consecutive updateData commands on the same entry into one operation
@@ -495,7 +494,7 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
           authorId,
           title: `Leaderboard: ${params.leaderboardName}`,
           iconUrl,
-          fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(guildId, params.leaderboardName, params.scope || "global", pt, params.universeId),
+          fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(guildId, params.leaderboardName, params.scope || "global", pt, params.universeId, 10),
           formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
           sendInitial: (opts) => channel.send(opts),
         });

@@ -5,8 +5,7 @@ module.exports = {
     {
       name: "RoAdmin",
       script: "src/index.js",
-      // Use the absolute path to ensure PM2 always knows where to write
-      cwd: "/home/orazimbetov_jalaladdin1/RoAdmin", 
+      cwd: path.resolve(__dirname),
       exec_mode: "fork",
       autorestart: true,
       watch: false,

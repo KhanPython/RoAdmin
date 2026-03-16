@@ -120,13 +120,15 @@ Do NOT wrap in markdown code fences. Return ONLY the JSON.`;
   try {
     const client = new Anthropic.default({ apiKey: llmCache.getLlmKey(guildId) });
 
+    // Strip XML-like tags from the serialized JSON to prevent tag-boundary injection
+    const sanitizedJson = JSON.stringify(currentValue, null, 2).replace(/<\/?[a-zA-Z][^>]*>/g, "");
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{
         role: "user",
-        content: `<untrusted_data>\n${JSON.stringify(currentValue, null, 2)}\n</untrusted_data>\n\n<instruction>\n${instruction}\n</instruction>`,
+        content: `<untrusted_data>\n${sanitizedJson}\n</untrusted_data>\n\n<instruction>\n${instruction}\n</instruction>`,
       }],
     });
 
