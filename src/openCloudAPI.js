@@ -388,12 +388,14 @@ exports.SetDataStoreEntry = async function (guildId, key, value, universeId, dat
     const limited = checkLimit(universeId);
     if (limited) return limited;
     const encodedKey = encodeURIComponent(key);
-    const entryUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries/${encodedKey}`;
+    const entryUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries/${encodedKey}?updateMask=value`;
     try {
       const response = await axios.patch(entryUrl, { value }, { headers: getApiHeaders(guildId, universeId) });
-      if (response.status === 200 || response.status === 201) return createSuccessResponse();
+      if (response.status === 200 || response.status === 201 || response.status === 204) return createSuccessResponse();
     } catch (patchErr) {
-      if (patchErr.response?.status !== 404) throw patchErr;
+      const patchStatus = patchErr.response?.status;
+      // Only abort on real server errors (not 404 and not a timeout with no response)
+      if (patchStatus !== undefined && patchStatus !== 404) throw patchErr;
       // Key doesn't exist yet - create it
       const createUrl = new URL(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/${encodeURIComponent(datastoreName)}/scopes/${encodeURIComponent(scope)}/entries`);
       createUrl.searchParams.set("id", key);
