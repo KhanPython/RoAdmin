@@ -11,7 +11,7 @@ const { RateLimiter } = require("../utils/rateLimiter");
 const { pushHistory, getHistory, clearUserHistory, clearChannelHistories } = require("../utils/commandHistory");
 const { processCommand } = require("./llmProcessor");
 const { showConfirmationAndExecute } = require("./nlpConfirmation");
-const { buildStatusEmbed, buildProcessingEmbed, buildConsentEmbed } = require("../utils/formatters");
+const { buildStatusEmbed, buildConsentEmbed } = require("../utils/formatters");
 
 // Per-user rate limiter for LLM calls: 5 requests per 60 seconds
 const llmLimiter = new RateLimiter(5, 60_000);
@@ -186,9 +186,6 @@ async function handleNlpInteraction(interaction) {
     await editError("How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
     return;
   }
-
-  // Show processing indicator
-  await interaction.editReply({ embeds: [buildProcessingEmbed("Analyzing your request. This may take a moment.")] });
 
   let commands;
   try {
