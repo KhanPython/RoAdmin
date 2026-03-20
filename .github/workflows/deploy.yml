@@ -24,7 +24,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            APP_DIR="/home/orazimbetov_jalaladdin1/RoAdmin"
+            APP_DIR="$HOME/RoAdmin"
             APP_NAME="RoAdmin"
 
             export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.npm-global/bin:$PATH"
