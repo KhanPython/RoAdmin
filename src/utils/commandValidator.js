@@ -71,6 +71,12 @@ async function validateCommand(interaction, opts = {}) {
     }
   }
 
+  if (opts.leaderboardName !== undefined) {
+    if (!opts.leaderboardName || !SCOPE_RE.test(opts.leaderboardName)) {
+      return { valid: false, errorString: "Leaderboard name must be 1\u2013100 alphanumeric characters, dashes, or underscores." };
+    }
+  }
+
   if (opts.duration) {
     if (opts.duration.length > 20) {
       return { valid: false, errorString: "Duration is too long. Example: \"7d\", \"2m\", \"1y\"." };

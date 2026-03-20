@@ -7,7 +7,6 @@ globalThis.ReadableStream = ReadableStream;
 const discord = require("discord.js");
 const wokcommands = require("wokcommands");
 const path = require("path");
-const { handleNlpInteraction } = require("./nlp/nlpHandler");
 
 const apiCache = require("./utils/apiCache");
 const llmCache = require("./utils/llmCache");
@@ -54,20 +53,6 @@ client.once("clientReady", async () => {
 // Modal submit handlers
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isModalSubmit()) return;
-
-  // /ask modal - NLP command processing
-  if (interaction.customId === "ask_modal") {
-    try {
-      await handleNlpInteraction(interaction);
-    } catch (err) {
-      log.error("ask_modal handler error:", err.message);
-      const reply = interaction.deferred || interaction.replied
-        ? (opts) => interaction.editReply(opts)
-        : (opts) => interaction.reply({ ...opts, flags: discord.MessageFlags.Ephemeral });
-      await reply({ content: "❌ Something went wrong processing your command. Please try again." }).catch(() => {});
-    }
-    return;
-  }
 
   if (interaction.customId === "setllmkey_modal") {
     const { EmbedBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");

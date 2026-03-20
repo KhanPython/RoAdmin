@@ -18,25 +18,35 @@ class RateLimiter {
 
   _sweep() {
     const cutoff = Date.now() - this.windowMs;
-    for (const [key, timestamps] of this.requests) {
-      const valid = timestamps.filter(t => t > cutoff);
+    for (const [key, entry] of this.requests) {
+      const valid = entry.timestamps.filter(t => t > cutoff);
       if (valid.length === 0) {
         this.requests.delete(key);
-      } else if (valid.length < timestamps.length) {
-        this.requests.set(key, valid);
+      } else if (valid.length < entry.timestamps.length) {
+        this.requests.set(key, { timestamps: valid, lastUsed: entry.lastUsed });
       }
     }
   }
 
   // Check whether a request is allowed and record it if so
   check(key) {
-    // Hard cap on tracked keys to prevent memory exhaustion
+    const now = Date.now();
+
+    // LRU eviction: when at capacity and key is new, evict the least-recently-used key
     if (!this.requests.has(key) && this.requests.size >= MAX_KEYS) {
-      return { allowed: false, retryAfter: this.windowMs };
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const [k, entry] of this.requests) {
+        if (entry.lastUsed < oldestTime) {
+          oldestTime = entry.lastUsed;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey !== null) this.requests.delete(oldestKey);
     }
 
-    const now = Date.now();
-    const timestamps = this.requests.get(key) || [];
+    const entry = this.requests.get(key);
+    const timestamps = entry ? entry.timestamps : [];
 
     // Evict expired entries
     const cutoff = now - this.windowMs;
@@ -44,12 +54,12 @@ class RateLimiter {
 
     if (valid.length >= this.maxRequests) {
       const retryAfter = valid[0] - cutoff;
-      this.requests.set(key, valid);
+      this.requests.set(key, { timestamps: valid, lastUsed: now });
       return { allowed: false, retryAfter };
     }
 
     valid.push(now);
-    this.requests.set(key, valid);
+    this.requests.set(key, { timestamps: valid, lastUsed: now });
     return { allowed: true, retryAfter: 0 };
   }
 

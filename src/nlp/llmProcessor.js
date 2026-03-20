@@ -21,9 +21,10 @@ async function processCommand(text, knownUniverses = [], history = [], guildId =
 
   const historyContext =
     history.length > 0
-      ? `\nRecent commands executed in this channel (most recent last):\n` +
+      ? `\nRecent commands executed in this channel (most recent last, source = slash or nlp):\n` +
         history.map((h, i) => {
           const action = String(h.action || "").replace(/[\r\n\u0000-\u001F]/g, "");
+          const source = h.source === "nlp" ? "nlp" : "slash";
           // Sanitize param values to prevent stored data from injecting into the system prompt
           const sanitized = Object.fromEntries(
             Object.entries(h.parameters || {}).map(([k, v]) => [
@@ -32,9 +33,9 @@ async function processCommand(text, knownUniverses = [], history = [], guildId =
             ])
           );
           const params = JSON.stringify(sanitized);
-          return `${i + 1}. ${action} - ${params}`;
+          return `${i + 1}. [${source}] ${action} - ${params}`;
         }).join("\n") +
-        `\n\nUse this history to resolve references like "the previous user", "same universe", "undo that", "ban them again", etc. Carry forward parameters from recent commands when the user references them implicitly.`
+        `\n\nUse this history to resolve references like "the previous user", "same universe", "undo that", "ban them again", etc. Carry forward parameters from recent commands when the user references them implicitly. History includes commands from both slash commands and natural language - treat them equally for context.`
       : "";
 
   const systemPrompt = `You are a command parser for a Roblox admin Discord bot. Parse the user's intent and return ONLY valid JSON - no prose, no markdown code fences, no explanation.

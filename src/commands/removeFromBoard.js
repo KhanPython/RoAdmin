@@ -1,6 +1,6 @@
 const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const { pushHistory } = require("../nlp/nlpHandler");
+const { pushHistory } = require("../utils/commandHistory");
 const { buildRemoveFromBoardEmbed, buildInternalErrorEmbed, buildResultEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
@@ -52,7 +52,7 @@ module.exports = {
     const key = interaction?.options?.getString("key") || args[3] || null;
 
     const check = await validateCommand(interaction, {
-      userId, universeId, requireApiKey: true, requireUniverse: true,
+      userId, universeId, leaderboardName, requireApiKey: true, requireUniverse: true,
     });
     if (!check.valid) return check.errorString;
 

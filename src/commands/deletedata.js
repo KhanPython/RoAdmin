@@ -1,6 +1,6 @@
 const { ApplicationCommandOptionType, AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const { pushHistory } = require("../nlp/nlpHandler");
+const { pushHistory } = require("../utils/commandHistory");
 const { buildDeleteDataEmbed, buildInternalErrorEmbed, buildConfirmEmbed, buildProcessingEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");

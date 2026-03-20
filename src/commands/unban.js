@@ -1,6 +1,6 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
-const { pushHistory } = require("../nlp/nlpHandler");
+const { pushHistory } = require("../utils/commandHistory");
 const { buildUnbanEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");

@@ -569,14 +569,19 @@ exports.GetUniverseName = async function (universeId) {
       let icon = apiCache.getUniverseIcon(universeId);
       if (!icon) {
         try {
-          const iconUrl = `https://thumbnails.roblox.com/v1/games/icons?universeIds=${gameData.id}&size=512x512&format=Png&isCircular=false`;
-          const iconResponse = await axios.get(iconUrl);
+          const safeId = Number(gameData.id);
+          if (!Number.isFinite(safeId) || safeId <= 0 || !Number.isInteger(safeId)) {
+            log.warn(`GetUniverseName: unexpected gameData.id: "${String(gameData.id).slice(0, 50)}"`);
+          } else {
+            const iconUrl = `https://thumbnails.roblox.com/v1/games/icons?universeIds=${safeId}&size=512x512&format=Png&isCircular=false`;
+            const iconResponse = await axios.get(iconUrl);
 
-          if (iconResponse.data && iconResponse.data.data && iconResponse.data.data[0]) {
-            const candidateIcon = iconResponse.data.data[0].imageUrl || null;
-            if (candidateIcon && isAllowedIconUrl(candidateIcon)) {
-              icon = candidateIcon;
-              apiCache.setUniverseIcon(universeId, icon);
+            if (iconResponse.data && iconResponse.data.data && iconResponse.data.data[0]) {
+              const candidateIcon = iconResponse.data.data[0].imageUrl || null;
+              if (candidateIcon && isAllowedIconUrl(candidateIcon)) {
+                icon = candidateIcon;
+                apiCache.setUniverseIcon(universeId, icon);
+              }
             }
           }
         } catch (iconError) {

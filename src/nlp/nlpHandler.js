@@ -8,6 +8,7 @@ const apiCache = require("../utils/apiCache");
 const llmCache = require("../utils/llmCache");
 const log = require("../utils/logger");
 const { RateLimiter } = require("../utils/rateLimiter");
+const { pushHistory, getHistory, clearUserHistory, clearChannelHistories } = require("../utils/commandHistory");
 const { processCommand } = require("./llmProcessor");
 const { showConfirmationAndExecute } = require("./nlpConfirmation");
 const { buildStatusEmbed, buildProcessingEmbed, buildConsentEmbed } = require("../utils/formatters");
@@ -28,47 +29,6 @@ const COMMAND_KEYWORDS = [
 ];
 
 const MAX_INPUT_LENGTH = 1000;
-const MAX_HISTORY = 20;
-const MAX_HISTORY_KEYS = 10_000;
-const commandHistory = new Map(); // `${channelId}:${userId}` → [{ action, parameters, timestamp }]
-
-function pushHistory(channelId, userId, action, parameters) {
-  const key = `${channelId}:${userId}`;
-  if (!commandHistory.has(key) && commandHistory.size >= MAX_HISTORY_KEYS) return;
-  if (!commandHistory.has(key)) commandHistory.set(key, []);
-  const history = commandHistory.get(key);
-  history.push({ action, parameters, timestamp: new Date().toISOString() });
-  if (history.length > MAX_HISTORY) history.shift();
-}
-
-function getHistory(channelId, userId) {
-  return commandHistory.get(`${channelId}:${userId}`) || [];
-}
-
-function clearUserHistory(userId) {
-  let count = 0;
-  const suffix = `:${userId}`;
-  for (const [key, entries] of commandHistory) {
-    if (key.endsWith(suffix)) {
-      count += entries.length;
-      commandHistory.delete(key);
-    }
-  }
-  return count;
-}
-
-function clearChannelHistories(channelIds) {
-  let count = 0;
-  const channelSet = new Set(channelIds.map(String));
-  for (const [key, entries] of commandHistory) {
-    const channelId = key.split(":")[0];
-    if (channelSet.has(channelId)) {
-      count += entries.length;
-      commandHistory.delete(key);
-    }
-  }
-  return count;
-}
 
 const universeInfoMap = new Map();
 const MAX_UNIVERSE_INFO_CACHE = 500;
@@ -183,10 +143,12 @@ async function showInteractionConsent(interaction) {
 
 // Main entry point - called from the ask_modal submission handler in index.js
 async function handleNlpInteraction(interaction) {
-  const textRaw = interaction.fields.getTextInputValue("ask_input").trim().slice(0, MAX_INPUT_LENGTH);
+  const textRaw = (interaction.options?.getString("prompt") || "").trim().slice(0, MAX_INPUT_LENGTH);
   const textLower = textRaw.toLowerCase();
 
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
 
   const editError = (title, description, color = 0xff0000) =>
     interaction.editReply({ embeds: [buildStatusEmbed(title, description, color)] });
@@ -309,7 +271,7 @@ async function handleNlpInteraction(interaction) {
     commands,
     universeInfoMap,
     interaction,
-    pushHistoryFn: pushHistory,
+    pushHistoryFn: (chId, uId, action, params) => pushHistory(chId, uId, action, params, "nlp"),
     skipConfirmation: allReadOnly,
   });
 }

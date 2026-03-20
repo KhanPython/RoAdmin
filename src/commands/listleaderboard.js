@@ -1,6 +1,6 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
-const { pushHistory } = require("../nlp/nlpHandler");
+const { pushHistory } = require("../utils/commandHistory");
 const { sendPaginatedList } = require("../utils/pagination");
 const { formatLeaderboardEntries, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
@@ -47,7 +47,7 @@ module.exports = {
     const scopeId = interaction?.options?.getString("scope") || args[2] || "global";
 
     const check = await validateCommand(interaction, {
-      universeId, scope: scopeId, requireApiKey: true, requireUniverse: true,
+      universeId, scope: scopeId, leaderboardName, requireApiKey: true, requireUniverse: true,
     });
     if (!check.valid) return check.errorString;
 
