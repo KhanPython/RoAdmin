@@ -49,4 +49,33 @@ function scheduleDataRedact(message, timeoutMs = DATA_AUTO_DELETE_MS) {
   }, timeoutMs);
 }
 
-module.exports = { scheduleAutoDelete, scheduleDataRedact, DATA_AUTO_DELETE_MS };
+/**
+ * Like scheduleDataRedact but works with ephemeral interaction replies.
+ * Uses interaction.editReply() instead of message.edit() since ephemeral
+ * messages cannot be edited via the regular channel endpoint.
+ * @param {import("discord.js").CommandInteraction} interaction
+ * @param {number} [timeoutMs]
+ */
+function scheduleInteractionRedact(interaction, timeoutMs = DATA_AUTO_DELETE_MS) {
+  setTimeout(async () => {
+    try {
+      const message = await interaction.fetchReply();
+      const original = message.embeds[0];
+      if (!original) return;
+
+      const filteredFields = (original.fields ?? []).filter(f => !SENSITIVE_FIELDS.has(f.name));
+      filteredFields.push({ name: "Data", value: "Data expired for privacy compliance.", inline: false });
+
+      const redacted = EmbedBuilder.from(original)
+        .setColor(0x808080)
+        .setFields(filteredFields)
+        .setFooter({ text: "Data fields redacted for privacy compliance" });
+
+      await interaction.editReply({ embeds: [redacted], attachments: [], files: [] });
+    } catch (err) {
+      log.debug("Interaction data redact failed:", err.message);
+    }
+  }, timeoutMs);
+}
+
+module.exports = { scheduleAutoDelete, scheduleDataRedact, scheduleInteractionRedact, DATA_AUTO_DELETE_MS };
