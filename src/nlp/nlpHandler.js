@@ -230,12 +230,27 @@ async function handleNlpInteraction(interaction) {
     return;
   }
 
-  // Reject any universeId not already configured via /setapikey
+  // Reject any universeId not already configured via /setapikey.
+  // If the ID wasn't explicitly typed by the user, the LLM likely hallucinated it
+  // from a game name — show a "Game Not Found" error instead of "Unknown Universe".
+  const configuredIds = new Set(apiCache.getCachedUniverseIds(interaction.guildId).map(String));
   const unconfiguredUniverse = commands.find(
     cmd => cmd.parameters.universeId && !apiCache.hasApiKey(interaction.guildId, cmd.parameters.universeId)
   );
   if (unconfiguredUniverse) {
-    await editError("Unknown Universe", `Universe **${unconfiguredUniverse.parameters.universeId}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
+    const idStr = String(unconfiguredUniverse.parameters.universeId);
+    const userTypedId = textRaw.includes(idStr);
+    if (!userTypedId) {
+      // LLM fabricated a universeId — treat as unresolved game name
+      const knownUniverses = apiCache.getCachedUniverses(interaction.guildId);
+      const knownNames = knownUniverses.map(u => u.name).filter(Boolean);
+      const available = knownNames.length > 0
+        ? `\n\nConfigured games: **${knownNames.join("**, **")}**`
+        : "";
+      await editError("Game Not Found", `I couldn't match a game name in your request to any configured universe.${available}\nUse \`/setapikey\` to configure a new universe.`, 0xff0000);
+      return;
+    }
+    await editError("Unknown Universe", `Universe **${idStr}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
     return;
   }
 

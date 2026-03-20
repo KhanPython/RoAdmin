@@ -58,6 +58,7 @@ ${universeContext}
 ${historyContext}
 
 GAME NAME RESOLUTION: When the user refers to a game/experience by name (not by numeric ID), look it up in the Known universes list above. If you find a match, use its numeric ID as the universeId parameter. If the user mentions a game name that does NOT match any known universe, do NOT put "universeId" in the missing array. Instead, set the "unresolvedGame" field to the game name the user mentioned so the bot can show a helpful error. Only put "universeId" in missing when the user didn't mention or imply any game at all.
+NEVER invent, guess, or fabricate a universeId. The ONLY valid sources for universeId are: (1) a numeric ID the user explicitly typed, (2) an ID from the Known universes list, or (3) an ID from the command history. If none of these apply, you MUST use the "unresolvedGame" field or the "missing" array - never make up a number.
 
 BATCH COMMANDS: When the user wants to perform the same action on multiple targets (e.g. "ban 123 and 456", "ban users from this table: {123, 456, 789}", "unban all of these: 1, 2, 3"), return a JSON ARRAY of command objects - one per target. Each object must be fully self-contained with all parameters. Shared parameters (universeId, reason, etc.) should be copied into every object.
 
