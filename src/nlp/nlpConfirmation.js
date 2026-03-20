@@ -105,7 +105,8 @@ async function showConfirmationAndExecute({ commands, universeInfoMap, interacti
     collector.stop("handled");
 
     if (i.customId === "nlp_cancel") {
-      await i.message.delete();
+      await i.deferUpdate();
+      await interaction.deleteReply();
       return;
     }
 
