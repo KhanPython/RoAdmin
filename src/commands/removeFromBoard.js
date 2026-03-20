@@ -1,7 +1,7 @@
 const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlp/nlpHandler");
-const { buildRemoveFromBoardEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
+const { buildRemoveFromBoardEmbed, buildInternalErrorEmbed, buildResultEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -65,19 +65,19 @@ module.exports = {
 
       if (!response.success && response.status && response.status.toLowerCase().includes("not found")) {
         const keyToCheck = key || `${userId}`;
-        const notFoundEmbed = new EmbedBuilder()
-          .setTitle("Remove Leaderboard Entry")
-          .setColor(0xFFFF00)
-          .setDescription(`**Experience:** ${universeInfo.name}\n\n⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.`)
-          .addFields(
+        const notFoundEmbed = buildResultEmbed(
+          "Remove Leaderboard Entry",
+          { success: false, status: `Key \`${keyToCheck}\` not found` },
+          [
             { name: "User ID:", value: `\`${userId}\``, inline: true },
             { name: "Universe ID:", value: `\`${universeId}\``, inline: true },
             { name: "Leaderboard Name:", value: leaderboardName, inline: true },
-            { name: "Key searched:", value: keyToCheck, inline: true }
-          )
-          .setTimestamp();
-
-        if (universeInfo.icon) notFoundEmbed.setThumbnail(universeInfo.icon);
+            { name: "Key searched:", value: keyToCheck, inline: true },
+          ],
+          undefined,
+          universeInfo.icon ?? null,
+          universeInfo.name ? `**Experience:** ${universeInfo.name}\n\n⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.` : `⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.`,
+        ).setColor(0xFFFF00);
 
         await interaction.editReply({ embeds: [notFoundEmbed] });
         return;

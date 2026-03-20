@@ -253,11 +253,61 @@ function formatKeyEntries(data, _pageNum, { universeId, scope, universeName }) {
   return `${header}\n\n${keys.map(k => `\`${k}\``).join("\n")}`;
 }
 
+// --- Generic embed builders used across NLP handler, commands, and confirmation flows ---
+
+// Simple status/info embed (replaces local buildEmbed dupes across files)
+function buildStatusEmbed(title, description, color = 0xff0000) {
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(color)
+    .setTimestamp();
+}
+
+// Confirmation embed with optional experience info and expiry footer
+function buildConfirmEmbed(title, description, { iconUrl = null, expirySeconds = 60 } = {}) {
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(0xffa500)
+    .setFooter({ text: `This request expires in ${expirySeconds} seconds` })
+    .setTimestamp();
+  if (iconUrl) embed.setThumbnail(iconUrl);
+  return embed;
+}
+
+// Data processing consent embed (used in NLP handler consent flow)
+function buildConsentEmbed() {
+  return new EmbedBuilder()
+    .setTitle("Data Processing Consent Required")
+    .setDescription(
+      "To use natural language commands, this bot sends your message text to **Anthropic (Claude AI)** for processing.\n\n" +
+      "**What is shared with Anthropic:**\n" +
+      "\u2022 Your message text (the command you type)\n" +
+      "\u2022 Recent command history for context\n\n" +
+      "**What is shared with Roblox:**\n" +
+      "\u2022 Your Discord user ID is attached to ban actions as an audit trail\n\n" +
+      "**What is NOT shared:**\n" +
+      "\u2022 Your Discord username\n" +
+      "\u2022 API keys or credentials\n\n" +
+      "**Data retention:**\n" +
+      "\u2022 Command history is stored in memory only and cleared on restart\n" +
+      "\u2022 You can delete all data at any time with `/forgetme`\n\n" +
+      "A server administrator must accept to enable NLP commands."
+    )
+    .setColor(0x5865f2)
+    .setFooter({ text: "Consent can be revoked at any time with /forgetme" })
+    .setTimestamp();
+}
+
 module.exports = {
   buildResultEmbed,
   buildErrorEmbed,
   buildInternalErrorEmbed,
   buildProcessingEmbed,
+  buildStatusEmbed,
+  buildConfirmEmbed,
+  buildConsentEmbed,
   buildBanEmbed,
   buildUnbanEmbed,
   buildCheckBanEmbed,

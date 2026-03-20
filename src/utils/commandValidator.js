@@ -3,12 +3,11 @@
 
 "use strict";
 
-const { MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { MessageFlags } = require("discord.js");
 const apiCache = require("./apiCache");
 const universeUtils = require("./universeUtils");
 const openCloud = require("../openCloudAPI");
-const llmCache = require("./llmCache");
-const log = require("./logger");
+
 
 const DURATION_UNITS = ["d", "m", "y", "h"];
 const SCOPE_RE = /^[a-zA-Z0-9_-]{1,100}$/;
@@ -121,142 +120,4 @@ async function validateCommand(interaction, opts = {}) {
   return { valid: true, deferred: true, universeInfo };
 }
 
-module.exports = { validateCommand, validateNlpPrerequisites };
-
-const COOLDOWN_MS = 3_000;
-const MAX_COOLDOWN_KEYS = 10_000;
-const lastCommandTime = new Map(); // userId → timestamp
-
-/**
- * Validate NLP handler prerequisites: permission, consent, cooldown, LLM key.
- *
- * Returns `{ valid: true }` when all checks pass.
- * On failure returns `{ valid: false }` after posting the appropriate reply/UI.
- *
- * The consent flow (button interaction) is self-contained inside this function.
- *
- * @param {import("discord.js").Message} message
- * @param {import("discord.js").Client} client – only used for consent UI collector
- */
-async function validateNlpPrerequisites(message) {
-  if (!message.member?.permissions.has("Administrator")) {
-    await _replyEmbed(message, "Permission Denied", "You need **Administrator** permission to use this command.");
-    return { valid: false };
-  }
-
-  if (message.guild && !apiCache.hasConsent(message.guild.id)) {
-    const accepted = await _showConsentFlow(message);
-    if (!accepted) return { valid: false };
-    // Consent was just accepted - tell user to re-send (mirrors original behaviour)
-    return { valid: false };
-  }
-
-  const now = Date.now();
-  const last = lastCommandTime.get(message.author.id) ?? 0;
-  const remaining = COOLDOWN_MS - (now - last);
-  if (remaining > 0) {
-    await _replyEmbed(message, "Slow down", `Please wait **${(remaining / 1000).toFixed(1)}s** before sending another command.`, 0xffa500);
-    return { valid: false };
-  }
-  if (lastCommandTime.size >= MAX_COOLDOWN_KEYS) lastCommandTime.clear();
-  lastCommandTime.set(message.author.id, now);
-
-  if (!llmCache.hasLlmKey(message.guildId)) {
-    await _replyEmbed(message, "Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
-    return { valid: false };
-  }
-
-  return { valid: true };
-}
-
-// --- internal helpers ---
-
-function _replyEmbed(message, title, description, color = 0xff0000) {
-  return message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(description)
-        .setColor(color)
-        .setTimestamp(),
-    ],
-  });
-}
-
-async function _showConsentFlow(message) {
-  const consentEmbed = new EmbedBuilder()
-    .setTitle("Data Processing Consent Required")
-    .setDescription(
-      "To use natural language commands, this bot sends your message text to **Anthropic (Claude AI)** for processing.\n\n" +
-      "**What is shared with Anthropic:**\n" +
-      "\u2022 Your message text (the command you type)\n" +
-      "\u2022 Recent command history for context\n\n" +
-      "**What is shared with Roblox:**\n" +
-      "\u2022 Your Discord user ID is attached to ban actions as an audit trail\n\n" +
-      "**What is NOT shared:**\n" +
-      "\u2022 Your Discord username\n" +
-      "\u2022 API keys or credentials\n\n" +
-      "**Data retention:**\n" +
-      "\u2022 Command history is stored in memory only and cleared on restart\n" +
-      "\u2022 You can delete all data at any time with `/forgetme`\n\n" +
-      "A server administrator must accept to enable NLP commands."
-    )
-    .setColor(0x5865f2)
-    .setFooter({ text: "Consent can be revoked at any time with /forgetme" })
-    .setTimestamp();
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("consent_accept")
-      .setLabel("Accept")
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId("consent_decline")
-      .setLabel("Decline")
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  const consentReply = await message.reply({ embeds: [consentEmbed], components: [row] });
-  const consentCollector = consentReply.createMessageComponentCollector({ time: 120_000 });
-
-  return new Promise((resolve) => {
-    let settled = false;
-
-    consentCollector.on("collect", async (ci) => {
-      if (!ci.member?.permissions.has("Administrator")) {
-        await ci.reply({ content: "Only an administrator can accept data processing consent.", ephemeral: true });
-        return;
-      }
-      consentCollector.stop("handled");
-
-      if (ci.customId === "consent_accept") {
-        apiCache.setConsent(message.guild.id, ci.user.id);
-        await ci.update({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("Consent Accepted")
-              .setDescription("NLP commands are now enabled for this server. Please re-send your command.")
-              .setColor(0x00ff00)
-              .setTimestamp(),
-          ],
-          components: [],
-        });
-        settled = true;
-        resolve(true);
-      } else {
-        await ci.update({
-          content: "Consent declined. NLP commands will not be available. Slash commands (e.g. `/ban`, `/showData`) still work normally.",
-          embeds: [],
-          components: [],
-        });
-        settled = true;
-        resolve(false);
-      }
-    });
-
-    consentCollector.on("end", (_, reason) => {
-      if (reason === "time") consentReply.edit({ components: [] }).catch(() => {});
-      if (!settled) resolve(false);
-    });
-  });
-}
+module.exports = { validateCommand };

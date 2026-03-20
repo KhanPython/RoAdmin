@@ -1,7 +1,7 @@
 const { ApplicationCommandOptionType, AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const openCloud = require("../openCloudAPI");
 const { pushHistory } = require("../nlp/nlpHandler");
-const { buildDeleteDataEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
+const { buildDeleteDataEmbed, buildInternalErrorEmbed, buildConfirmEmbed, buildProcessingEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
 const log = require("../utils/logger");
 
@@ -61,22 +61,16 @@ module.exports = {
     try {
 
       const experienceHeader = universeInfo?.name ? `**Experience:** ${universeInfo.name}\n\n` : "";
-      const warningEmbed = new EmbedBuilder()
-        .setTitle("⚠️ Confirm Data Deletion")
-        .setDescription(
-          `${experienceHeader}**This action is irreversible.** The datastore entry will be permanently deleted from Roblox and cannot be recovered.`
-        )
-        .addFields(
-          { name: "Key", value: key, inline: true },
-          { name: "Datastore", value: datastoreName, inline: true },
-          { name: "Universe", value: `\`${universeId}\``, inline: true },
-          { name: "Scope", value: scope, inline: true },
-        )
-        .setColor(0xff0000)
-        .setFooter({ text: "This confirmation expires in 30 seconds" })
-        .setTimestamp();
-
-      if (universeInfo?.icon) warningEmbed.setThumbnail(universeInfo.icon);
+      const warningEmbed = buildConfirmEmbed(
+        "⚠️ Confirm Data Deletion",
+        `${experienceHeader}**This action is irreversible.** The datastore entry will be permanently deleted from Roblox and cannot be recovered.`,
+        { iconUrl: universeInfo?.icon ?? null, expirySeconds: 30 },
+      ).setColor(0xff0000).spliceFields(0, 0,
+        { name: "Key", value: key, inline: true },
+        { name: "Datastore", value: datastoreName, inline: true },
+        { name: "Universe", value: `\`${universeId}\``, inline: true },
+        { name: "Scope", value: scope, inline: true },
+      );
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -108,11 +102,7 @@ module.exports = {
           return;
         }
 
-        const processingEmbed = EmbedBuilder.from(i.message.embeds[0])
-          .setTitle("Processing...")
-          .setDescription("Deleting datastore entry…")
-          .setColor(0x5865f2)
-          .setFooter(null);
+        const processingEmbed = buildProcessingEmbed("Deleting datastore entry…");
         await i.update({ embeds: [processingEmbed], components: [] });
 
         // Snapshot current value before deleting so it can be attached as a file

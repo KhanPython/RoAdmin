@@ -10,6 +10,7 @@ const {
 const apiCache = require("../utils/apiCache");
 const llmCache = require("../utils/llmCache");
 const { clearUserHistory, clearChannelHistories } = require("../nlp/nlpHandler");
+const { buildStatusEmbed, buildProcessingEmbed } = require("../utils/formatters");
 
 module.exports = {
   category: "Privacy",
@@ -49,11 +50,10 @@ module.exports = {
           "**All administrators will need to reconfigure API keys after this.**\n" +
           "This action cannot be undone.";
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Delete ${scope === "personal" ? "Personal" : "Server"} Data`)
-      .setDescription(description)
-      .setColor(0xff0000)
-      .setTimestamp();
+    const embed = buildStatusEmbed(
+      `Delete ${scope === "personal" ? "Personal" : "Server"} Data`,
+      description,
+    );
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -84,10 +84,7 @@ module.exports = {
         return;
       }
 
-      const processingEmbed = EmbedBuilder.from(i.message.embeds[0])
-        .setTitle("Processing...")
-        .setDescription("Removing stored data…")
-        .setColor(0x5865f2);
+      const processingEmbed = buildProcessingEmbed("Removing stored data…");
       await i.update({ embeds: [processingEmbed], components: [] });
 
       const deleted = [];
@@ -113,14 +110,12 @@ module.exports = {
         }
       }
 
-      const resultEmbed = new EmbedBuilder()
-        .setTitle("Data Deleted")
-        .setDescription(
-          "The following data has been removed:\n" +
-          deleted.map(d => `\u2022 ${d}`).join("\n")
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
+      const resultEmbed = buildStatusEmbed(
+        "Data Deleted",
+        "The following data has been removed:\n" +
+        deleted.map(d => `\u2022 ${d}`).join("\n"),
+        0x00ff00,
+      );
 
       await interaction.editReply({ embeds: [resultEmbed], components: [] });
     });

@@ -1,23 +1,21 @@
-// NLP handler - thin orchestrator: mention detection, keyword filtering, consent,
+// NLP handler - orchestrator for /ask modal submissions: keyword filtering, consent,
 // LLM processing, validation, then delegates to nlpConfirmation for UI and nlpExecutor for execution.
 
-const { EmbedBuilder } = require("discord.js");
+const { EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
 const openCloud = require("../openCloudAPI");
 const apiCache = require("../utils/apiCache");
+const llmCache = require("../utils/llmCache");
 const log = require("../utils/logger");
 const { RateLimiter } = require("../utils/rateLimiter");
 const { processCommand } = require("./llmProcessor");
-const { buildProcessingEmbed } = require("../utils/formatters");
-const { validateNlpPrerequisites } = require("../utils/commandValidator");
 const { showConfirmationAndExecute } = require("./nlpConfirmation");
-const { version } = require("../../package.json");
+const { buildStatusEmbed, buildProcessingEmbed, buildConsentEmbed } = require("../utils/formatters");
 
 // Per-user rate limiter for LLM calls: 5 requests per 60 seconds
 const llmLimiter = new RateLimiter(5, 60_000);
 
 // Keywords that must appear in the message for it to be forwarded to the LLM.
-// Anything that doesn't match is silently ignored (no API call, no reply).
 const COMMAND_KEYWORDS = [
   "ban", "unban", "remove", "kick",
   "show", "data", "datastore",
@@ -29,6 +27,7 @@ const COMMAND_KEYWORDS = [
   "previous", "last", "same", "again", "undo",
 ];
 
+const MAX_INPUT_LENGTH = 1000;
 const MAX_HISTORY = 20;
 const MAX_HISTORY_KEYS = 10_000;
 const commandHistory = new Map(); // `${channelId}:${userId}` → [{ action, parameters, timestamp }]
@@ -132,123 +131,123 @@ function mergeConsecutiveUpdateData(commands) {
   return merged;
 }
 
-function buildEmbed(title, description, color = 0xff0000) {
-  return new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description)
-    .setColor(color)
-    .setTimestamp();
+/**
+ * Inline consent flow for /ask modal interactions.
+ * Shows consent embed via editReply, collects button response, returns true if accepted.
+ */
+async function showInteractionConsent(interaction) {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("consent_accept").setLabel("Accept").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("consent_decline").setLabel("Decline").setStyle(ButtonStyle.Secondary),
+  );
+
+  await interaction.editReply({ embeds: [buildConsentEmbed()], components: [row] });
+  const reply = await interaction.fetchReply();
+  const collector = reply.createMessageComponentCollector({ time: 120_000 });
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    collector.on("collect", async (ci) => {
+      if (!ci.member?.permissions.has("Administrator")) {
+        await ci.reply({ content: "Only an administrator can accept data processing consent.", flags: MessageFlags.Ephemeral });
+        return;
+      }
+      collector.stop("handled");
+
+      if (ci.customId === "consent_accept") {
+        apiCache.setConsent(interaction.guild.id, ci.user.id);
+        await ci.update({
+          embeds: [buildStatusEmbed("Consent Accepted", "NLP commands are now enabled for this server.\nPlease run `/ask` again to submit your command.", 0x00ff00)],
+          components: [],
+        });
+        settled = true;
+        resolve(true);
+      } else {
+        await ci.update({
+          content: "Consent declined. NLP commands will not be available. Slash commands (e.g. `/ban`, `/showData`) still work normally.",
+          embeds: [],
+          components: [],
+        });
+        settled = true;
+        resolve(false);
+      }
+    });
+
+    collector.on("end", (_, reason) => {
+      if (reason === "time") interaction.editReply({ components: [] }).catch(() => {});
+      if (!settled) resolve(false);
+    });
+  });
 }
 
-async function replyEmbed(message, title, description, color) {
-  return message.reply({ embeds: [buildEmbed(title, description, color)] });
-}
-
-// Main entry point - call from client.on('messageCreate', ...)
-async function handleMessage(client, message) {
-  if (message.author.bot) return;
-  if (!message.mentions.has(client.user)) return;
-
-  const MAX_INPUT_LENGTH = 1000;
-  const textRaw = message.content.replace(/<@!?\d+>/g, "").trim().slice(0, MAX_INPUT_LENGTH);
+// Main entry point - called from the ask_modal submission handler in index.js
+async function handleNlpInteraction(interaction) {
+  const textRaw = interaction.fields.getTextInputValue("ask_input").trim().slice(0, MAX_INPUT_LENGTH);
   const textLower = textRaw.toLowerCase();
 
-  // About intent - handle before consent/keyword checks (no LLM required, but admin required)
-  const ABOUT_PHRASES = ["about yourself", "about you", "who are you", "what are you", "introduce yourself", "tell me about"];
-  if (ABOUT_PHRASES.some(p => textLower.includes(p))) {
-    if (!message.member?.permissions.has("Administrator")) {
-      await replyEmbed(message, "Permission Denied", "You need **Administrator** permission to use this command.");
-      return;
-    }
-    const app = await client.application.fetch();
-    const uptime = (() => {
-      const ms = client.uptime;
-      if (!ms) return "Unknown";
-      const s = Math.floor(ms / 1000);
-      const d = Math.floor(s / 86400);
-      const h = Math.floor((s % 86400) / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      const parts = [];
-      if (d > 0) parts.push(`${d}d`);
-      if (h > 0) parts.push(`${h}h`);
-      parts.push(`${m}m`);
-      return parts.join(" ");
-    })();
-    const keystore = require("../utils/keystore");
-    const consentStatus = message.guild && apiCache.hasConsent(message.guild.id);
-    const storageMode = keystore.isEnabled() ? "Encrypted at rest" : "Memory-only (session)";
-    const embed = new EmbedBuilder()
-      .setTitle(app.name || "RoAdmin")
-      .setDescription(app.description || "A Discord bot for managing Roblox experiences via Open Cloud API.")
-      .setColor(0x5865f2)
-      .addFields(
-        { name: "Version", value: version, inline: true },
-        { name: "Uptime", value: uptime, inline: true },
-        { name: "Guilds", value: String(client.guilds.cache.size), inline: true },
-        { name: "Credential Storage", value: storageMode, inline: true },
-        { name: "NLP Consent", value: consentStatus ? "Accepted" : "Not accepted", inline: true },
-        {
-          name: "Data Practices",
-          value:
-            "\u2022 API keys are encrypted with AES-256-GCM when `ENCRYPTION_KEY` is set\n" +
-            "\u2022 NLP commands send your message text to Anthropic (Claude) for parsing\n" +
-            "\u2022 Your Discord user ID is attached to ban actions as an audit trail on Roblox\n" +
-            "\u2022 Command history is held in memory only and cleared on restart\n" +
-            "\u2022 Use `/forgetme` to delete all stored data at any time",
-        }
-      )
-      .setTimestamp();
-    await message.reply({ embeds: [embed] });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const editError = (title, description, color = 0xff0000) =>
+    interaction.editReply({ embeds: [buildStatusEmbed(title, description, color)] });
+
+  // Consent check
+  if (interaction.guild && !apiCache.hasConsent(interaction.guild.id)) {
+    const accepted = await showInteractionConsent(interaction);
+    if (!accepted) return;
+    // Consent just accepted - user must re-invoke /ask so the command is processed fresh
     return;
   }
 
-  // Keyword pre-filter - silently ignore non-command messages
-  const looksLikeCommand = COMMAND_KEYWORDS.some(kw => textLower.includes(kw));
-  if (!looksLikeCommand) return;
+  // LLM key check
+  if (!llmCache.hasLlmKey(interaction.guildId)) {
+    await editError("Setup Required", "No LLM API key configured.\nAn administrator must run `/setllmkey` first.");
+    return;
+  }
 
-  const prereq = await validateNlpPrerequisites(message);
-  if (!prereq.valid) return;
+  // Keyword pre-filter
+  const looksLikeCommand = COMMAND_KEYWORDS.some(kw => textLower.includes(kw));
+  if (!looksLikeCommand) {
+    await editError("Unrecognised Command", "I couldn't identify a command keyword in your message.\nTry including words like: **ban, show, data, leaderboard, list**, etc.", 0xffa500);
+    return;
+  }
 
   // Per-user rate limit on LLM calls to prevent cost abuse
-  const llmCheck = llmLimiter.check(`llm:${message.author.id}`);
+  const llmCheck = llmLimiter.check(`llm:${interaction.user.id}`);
   if (!llmCheck.allowed) {
     const secs = Math.ceil(llmCheck.retryAfter / 1000);
-    await replyEmbed(message, "Slow Down", `You're sending commands too quickly. Try again in ${secs}s.`, 0xffa500);
+    await editError("Slow Down", `You're sending commands too quickly. Try again in ${secs}s.`, 0xffa500);
     return;
   }
 
   if (!textRaw) {
-    await replyEmbed(message, "How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
+    await editError("How can I help?", "Try something like:\n`ban user 12345 for cheating in MyGame`", 0x5865f2);
     return;
   }
 
-  // Send thinking indicator immediately before the slow LLM call
-  const thinkingReply = await message.reply({ embeds: [buildProcessingEmbed("Analyzing your request. This may take a moment.")] });
-
-  const editThinkingError = async (title, description, color = 0xff0000) => {
-    return thinkingReply.edit({ embeds: [buildEmbed(title, description, color)], components: [] });
-  };
+  // Show processing indicator
+  await interaction.editReply({ embeds: [buildProcessingEmbed("Analyzing your request. This may take a moment.")] });
 
   let commands;
   try {
-    const knownUniverses = apiCache.getCachedUniverses(message.guildId);
-    const history = getHistory(message.channel.id, message.author.id);
-    commands = await processCommand(textRaw, knownUniverses, history, message.guildId);
+    const knownUniverses = apiCache.getCachedUniverses(interaction.guildId);
+    const history = getHistory(interaction.channelId, interaction.user.id);
+    commands = await processCommand(textRaw, knownUniverses, history, interaction.guildId);
   } catch (err) {
     log.error("Unexpected error calling processCommand:", err.message);
-    await editThinkingError("Processing Error", "Failed to process your request. Please try again.");
+    await editError("Processing Error", "Failed to process your request. Please try again.");
     return;
   }
 
   if (!commands[0]?.action) {
-    await editThinkingError("Unrecognised Command", commands[0]?.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
+    await editError("Unrecognised Command", commands[0]?.confirmation_summary || "I couldn't understand that as a command.", 0xffa500);
     return;
   }
 
   const invalidAction = commands.find(cmd => !ALLOWED_ACTIONS.has(cmd.action));
   if (invalidAction) {
     log.warn(`Rejected unknown action "${invalidAction.action}" - possible prompt injection`);
-    await editThinkingError("Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
+    await editError("Invalid Command", "The parsed command contains an unrecognised action and was rejected.", 0xff0000);
     return;
   }
 
@@ -256,41 +255,39 @@ async function handleMessage(client, message) {
   const paramError = commands.map(validateParsedParams).find(Boolean);
   if (paramError) {
     log.warn(`Rejected command with invalid parameters: ${paramError}`);
-    await editThinkingError("Invalid Parameters", `Parameter validation failed: **${paramError}**`, 0xff0000);
+    await editError("Invalid Parameters", `Parameter validation failed: **${paramError}**`, 0xff0000);
     return;
   }
 
   // Reject batch sizes over the cap
   if (commands.length > MAX_BATCH_SIZE) {
-    await editThinkingError("Too Many Commands", `Batch requests are limited to **${MAX_BATCH_SIZE} commands** at a time. Your request parsed ${commands.length}.`, 0xff0000);
+    await editError("Too Many Commands", `Batch requests are limited to **${MAX_BATCH_SIZE} commands** at a time. Your request parsed ${commands.length}.`, 0xff0000);
     return;
   }
 
-  // Full-replacement writes (setData) must not be batched - too easy to accidentally overwrite.
-  // updateData (field-level patches) ARE allowed to batch: execution is sequential so each
-  // write fetches the already-patched value from the previous step and chains correctly.
+  // Full-replacement writes (setData) must not be batched
   if (commands.length > 1 && commands.some(cmd => cmd.action === "setData")) {
-    await editThinkingError("Cannot Batch Data Writes", "`setData` commands must be executed one at a time to avoid overwriting data.", 0xff0000);
+    await editError("Cannot Batch Data Writes", "`setData` commands must be executed one at a time to avoid overwriting data.", 0xff0000);
     return;
   }
 
   // Reject any universeId not already configured via /setapikey
   const unconfiguredUniverse = commands.find(
-    cmd => cmd.parameters.universeId && !apiCache.hasApiKey(message.guildId, cmd.parameters.universeId)
+    cmd => cmd.parameters.universeId && !apiCache.hasApiKey(interaction.guildId, cmd.parameters.universeId)
   );
   if (unconfiguredUniverse) {
-    await editThinkingError("Unknown Universe", `Universe **${unconfiguredUniverse.parameters.universeId}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
+    await editError("Unknown Universe", `Universe **${unconfiguredUniverse.parameters.universeId}** has no API key configured.\nOnly universes set up via \`/setapikey\` can be used.`, 0xff0000);
     return;
   }
 
   // Collect all missing params across commands
   const allMissing = [...new Set(commands.flatMap(cmd => cmd.missing))];
   if (allMissing.length > 0) {
-    await editThinkingError("Missing Information", `I need more details to proceed:\n**${allMissing.join(", ")}**`, 0xffa500);
+    await editError("Missing Information", `I need more details to proceed:\n**${allMissing.join(", ")}**`, 0xffa500);
     return;
   }
 
-  // Collect all referenced universe IDs (already verified above)
+  // Collect all referenced universe IDs
   const universeIds = [...new Set(commands.map(cmd => cmd.parameters.universeId).filter(Boolean))];
 
   await Promise.all(universeIds.map(async (uid) => {
@@ -311,11 +308,10 @@ async function handleMessage(client, message) {
   await showConfirmationAndExecute({
     commands,
     universeInfoMap,
-    message,
-    thinkingReply,
+    interaction,
     pushHistoryFn: pushHistory,
     skipConfirmation: allReadOnly,
   });
 }
 
-module.exports = { handleMessage, pushHistory, clearUserHistory, clearChannelHistories };
+module.exports = { handleNlpInteraction, pushHistory, clearUserHistory, clearChannelHistories };

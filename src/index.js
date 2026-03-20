@@ -7,7 +7,7 @@ globalThis.ReadableStream = ReadableStream;
 const discord = require("discord.js");
 const wokcommands = require("wokcommands");
 const path = require("path");
-const { handleMessage } = require("./nlp/nlpHandler");
+const { handleNlpInteraction } = require("./nlp/nlpHandler");
 
 const apiCache = require("./utils/apiCache");
 const llmCache = require("./utils/llmCache");
@@ -32,7 +32,6 @@ const client = new discord.Client({
   intents: [
     discord.IntentsBitField.Flags.Guilds,
     discord.IntentsBitField.Flags.GuildMessages,
-    discord.IntentsBitField.Flags.MessageContent,
   ],
   allowedMentions: { parse: ["users"] },
 });
@@ -52,16 +51,29 @@ client.once("clientReady", async () => {
   }
 });
 
-client.on("messageCreate", (message) => handleMessage(client, message));
-
-// Modal submit handlers for credential commands
+// Modal submit handlers
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isModalSubmit()) return;
+
+  // /ask modal - NLP command processing
+  if (interaction.customId === "ask_modal") {
+    try {
+      await handleNlpInteraction(interaction);
+    } catch (err) {
+      log.error("ask_modal handler error:", err.message);
+      const reply = interaction.deferred || interaction.replied
+        ? (opts) => interaction.editReply(opts)
+        : (opts) => interaction.reply({ ...opts, flags: discord.MessageFlags.Ephemeral });
+      await reply({ content: "❌ Something went wrong processing your command. Please try again." }).catch(() => {});
+    }
+    return;
+  }
 
   if (interaction.customId === "setllmkey_modal") {
     const { EmbedBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
     const Anthropic = require("@anthropic-ai/sdk");
     const keystore = require("./utils/keystore");
+    const { buildErrorEmbed, buildStatusEmbed } = require("./utils/formatters");
 
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
       await interaction.reply({ content: "❌ Administrator permission is required.", flags: MessageFlags.Ephemeral });
@@ -96,11 +108,7 @@ client.on("interactionCreate", async (interaction) => {
         "The API key could not be validated. Please check the key and try again.";
       await interaction.editReply({
         embeds: [
-          new EmbedBuilder()
-            .setTitle("Invalid API Key")
-            .setColor(0xff0000)
-            .setDescription(safeReason)
-            .setTimestamp(),
+          buildStatusEmbed("Invalid API Key", safeReason),
         ],
       });
       return;
@@ -111,27 +119,24 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.editReply({
       embeds: [
-        new EmbedBuilder()
-          .setTitle(diskFailed ? "⚠️ Credential Storage Error" : "✅ LLM API Key Configured")
-          .setColor(diskFailed ? 0xff9900 : 0x00ff00)
-          .setDescription(
-            (diskFailed
-              ? "Anthropic API key is active but could not be written to secure storage. It will not persist across restarts.\n\n"
-              : keystore.isEnabled()
-                ? "Anthropic API key securely stored.\n\n"
-                : "Anthropic API key active for this session.\n\n") +
-            "Mention the bot in any channel to issue commands in plain English.\n" +
-            "Example: `@RoAdmin ban user 12345 for cheating in MyGame`"
-          )
-          .addFields({
-            name: "Storage",
-            value: diskFailed
-              ? "Contact the bot administrator to resolve the storage issue."
-              : keystore.isEnabled()
-                ? "Encrypted at rest · Persists across restarts"
-                : "Session-only · Will not persist across restarts",
-          })
-          .setTimestamp(),
+        buildStatusEmbed(
+          diskFailed ? "⚠️ Credential Storage Error" : "✅ LLM API Key Configured",
+          (diskFailed
+            ? "Anthropic API key is active but could not be written to secure storage. It will not persist across restarts.\n\n"
+            : keystore.isEnabled()
+              ? "Anthropic API key securely stored.\n\n"
+              : "Anthropic API key active for this session.\n\n") +
+          "Use `/ask` to issue commands in plain English.\n" +
+          "Example: `ban user 12345 for cheating in MyGame`",
+          diskFailed ? 0xff9900 : 0x00ff00,
+        ).addFields({
+          name: "Storage",
+          value: diskFailed
+            ? "Contact the bot administrator to resolve the storage issue."
+            : keystore.isEnabled()
+              ? "Encrypted at rest · Persists across restarts"
+              : "Session-only · Will not persist across restarts",
+        }),
       ],
     });
     return;

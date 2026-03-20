@@ -46,8 +46,9 @@ function getChangedLeafKeys(a, b, depth = 0) {
   return changed;
 }
 
-// Execute a parsed action and return a result embed (null for paginated actions)
-async function executeAction(action, params, universeInfo, channel, authorId, guildId) {
+// Execute a parsed action and return a result embed (null for paginated/inline actions)
+// sendFn(opts) sends a message - either channel.send() or interaction.followUp({ ephemeral: true })
+async function executeAction(action, params, universeInfo, sendFn, authorId, guildId) {
   try {
     let result;
     const iconUrl = universeInfo?.icon ?? null;
@@ -88,11 +89,11 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
           const jsonString = JSON.stringify(result.data, null, 2);
           const fileBuffer = Buffer.from(jsonString, "utf-8");
           const attachment = new AttachmentBuilder(fileBuffer, { name: `${params.key}_data.txt` });
-          const sentMsg = await channel.send({ embeds: [showEmbed], files: [attachment] });
-          scheduleDataRedact(sentMsg);
+          const sentMsg = await sendFn({ embeds: [showEmbed], files: [attachment] });
+          if (sentMsg) scheduleDataRedact(sentMsg);
         } else {
           showEmbed.addFields({ name: "Value", value: "No data found for this key.", inline: false });
-          await channel.send({ embeds: [showEmbed] });
+          await sendFn({ embeds: [showEmbed] });
         }
         return null;
       }
@@ -104,7 +105,7 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
           iconUrl,
           fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(guildId, params.leaderboardName, params.scope || "global", pt, params.universeId, 10),
           formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
-          sendInitial: (opts) => channel.send(opts),
+          sendInitial: sendFn,
         });
         return null;
       }
@@ -136,7 +137,7 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
           iconUrl,
           fetchPage: (pt) => openCloud.ListBans(guildId, params.universeId, pt),
           formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo?.name ?? null }),
-          sendInitial: (opts) => channel.send(opts),
+          sendInitial: sendFn,
         });
         return null;
 
@@ -235,7 +236,7 @@ async function executeAction(action, params, universeInfo, channel, authorId, gu
           iconUrl,
           fetchPage: (pt) => openCloud.ListDataStoreKeys(guildId, params.universeId, params.datastoreName, params.scope || "global", pt),
           formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
-          sendInitial: (opts) => channel.send(opts),
+          sendInitial: sendFn,
         });
         return null;
 
