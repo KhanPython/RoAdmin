@@ -312,7 +312,6 @@ RoAdmin follows a defense-in-depth approach — multiple overlapping layers so t
 
 ### Data Privacy
 
-- Sensitive embed fields (datastore values, data size) are **automatically redacted** after 2 minutes; attached data files are removed.
 - `/forgetme personal` clears a user's NLP command history; `/forgetme server` wipes all keys, consent, and history for the guild (requires confirmation).
 - Command history is kept **in memory only** (max 20 entries per user/channel pair, max 10,000 keys total) and is never persisted to disk.
 
