@@ -239,6 +239,17 @@ async function handleNlpInteraction(interaction) {
     return;
   }
 
+  // Check if any command references a game name that couldn't be resolved
+  const unresolvedGame = commands.find(cmd => cmd.unresolvedGame)?.unresolvedGame;
+  if (unresolvedGame) {
+    const knownNames = apiCache.getCachedUniverses(interaction.guildId).map(u => u.name).filter(Boolean);
+    const available = knownNames.length > 0
+      ? `\n\nConfigured games: **${knownNames.join("**, **")}**`
+      : "";
+    await editError("Game Not Found", `I couldn't find a game matching **${String(unresolvedGame).slice(0, 100)}**.${available}\nUse \`/setapikey\` to configure a new universe.`, 0xff0000);
+    return;
+  }
+
   // Collect all missing params across commands
   const allMissing = [...new Set(commands.flatMap(cmd => cmd.missing))];
   if (allMissing.length > 0) {

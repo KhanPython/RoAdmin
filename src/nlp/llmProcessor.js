@@ -57,6 +57,8 @@ IMPORTANT: deleteData is NOT available through natural language. If the user ask
 ${universeContext}
 ${historyContext}
 
+GAME NAME RESOLUTION: When the user refers to a game/experience by name (not by numeric ID), look it up in the Known universes list above. If you find a match, use its numeric ID as the universeId parameter. If the user mentions a game name that does NOT match any known universe, do NOT put "universeId" in the missing array. Instead, set the "unresolvedGame" field to the game name the user mentioned so the bot can show a helpful error. Only put "universeId" in missing when the user didn't mention or imply any game at all.
+
 BATCH COMMANDS: When the user wants to perform the same action on multiple targets (e.g. "ban 123 and 456", "ban users from this table: {123, 456, 789}", "unban all of these: 1, 2, 3"), return a JSON ARRAY of command objects - one per target. Each object must be fully self-contained with all parameters. Shared parameters (universeId, reason, etc.) should be copied into every object.
 
 Output schema - return ONLY this JSON, nothing else:
@@ -66,6 +68,7 @@ For a SINGLE command:
   "action": "<one of the action names above, or null if the message is not a recognizable admin command>",
   "parameters": { "<only parameters explicitly found or resolvable from the message>" },
   "missing": ["<names of required parameters absent from the message>"],
+  "unresolvedGame": "<game name the user mentioned that could not be matched to a known universe, or omit if not applicable>",
   "confirmation_summary": "<one concise sentence describing what will happen, or a brief reason if action is null>"
 }]
 
@@ -101,6 +104,7 @@ ALWAYS return an array, even for a single command.`;
       action: cmd.action ?? null,
       parameters: cmd.parameters ?? {},
       missing: Array.isArray(cmd.missing) ? cmd.missing : [],
+      unresolvedGame: cmd.unresolvedGame ?? null,
       confirmation_summary: cmd.confirmation_summary ?? "",
     }));
   } catch (err) {
