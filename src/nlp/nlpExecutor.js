@@ -6,6 +6,7 @@ const robloxUserInfo = require("../robloxUserInfo");
 const log = require("../utils/logger");
 const { patchDatastoreValue } = require("./llmProcessor");
 const { sendPaginatedList } = require("../utils/pagination");
+const { promptInlineConfirm } = require("../utils/inlineConfirm");
 const {
   buildBanEmbed,
   buildUnbanEmbed,
@@ -110,7 +111,7 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
       case "listLeaderboard": {
         await sendPaginatedList({
           authorId,
-          title: `Leaderboard: ${params.leaderboardName}`,
+          title: `Leaderboard - ${params.leaderboardName}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListOrderedDataStoreEntries(guildId, params.leaderboardName, params.scope || "global", pt, params.universeId, 10),
           formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
@@ -131,15 +132,12 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
           ),
           robloxUserInfo.getUserDisplayInfo(params.userId).catch(() => null),
         ]);
-        // buildRemoveFromBoardEmbed currently doesn't surface user info, but
-        // we still resolve it so future formatter changes pick it up automatically.
-        void userInfo;
         return buildRemoveFromBoardEmbed(boardResult, {
           userId: params.userId,
           universeId: params.universeId,
           leaderboardName: params.leaderboardName,
           key: params.key,
-        }, universeInfo);
+        }, universeInfo, userInfo);
       }
 
       case "checkBan": {
@@ -207,10 +205,24 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
             await btn.reply({ content: "Invalid selection.", flags: MessageFlags.Ephemeral }).catch(() => {});
             return;
           }
-          await btn.deferUpdate().catch(() => {});
+
+          const cachedInfo = userInfoMap.get(String(targetId));
+          const userLabel = cachedInfo
+            ? `**${cachedInfo.displayName || cachedInfo.username}** (\`${targetId}\`)`
+            : `\`${targetId}\``;
+          const expName = universeInfo?.name ?? `Universe ${params.universeId}`;
+
+          const confirmed = await promptInlineConfirm({
+            interaction: btn,
+            title: "Confirm Unban",
+            description: `**Experience:** ${expName}\n\nUnban ${userLabel} from this universe?`,
+            iconUrl: cachedInfo?.avatarUrl || iconUrl || null,
+          });
+          if (!confirmed) return;
+
           const [unbanResult, info] = await Promise.all([
             openCloud.UnbanUser(guildId, targetId, params.universeId),
-            robloxUserInfo.getUserDisplayInfo(targetId).catch(() => null),
+            cachedInfo ? Promise.resolve(cachedInfo) : robloxUserInfo.getUserDisplayInfo(targetId).catch(() => null),
           ]);
           await sendFn({
             embeds: [buildUnbanEmbed(unbanResult, { userId: targetId, universeId: params.universeId }, universeInfo, info)],

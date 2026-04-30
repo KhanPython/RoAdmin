@@ -47,7 +47,9 @@ async function showConfirmationAndExecute({ commands, universeInfoMap, interacti
           await sendFn({ embeds: resultEmbeds.splice(0, 10) });
         }
       } else {
-        await interaction.editReply({ embeds: [buildStatusEmbed("Done", "Command completed.", 0x00ff00)] });
+        // Action(s) sent their own output via sendFn (paginated lists, showData,
+        // etc.) - clear the now-meaningless "Processing…" placeholder.
+        await interaction.deleteReply().catch(() => {});
       }
     } catch (err) {
       log.error("Error executing read-only command:", err.message);
@@ -140,7 +142,9 @@ async function showConfirmationAndExecute({ commands, universeInfoMap, interacti
           await sendFn({ embeds: resultEmbeds.splice(0, 10) });
         }
       } else {
-        await interaction.editReply({ embeds: [buildStatusEmbed("Done", "Command completed.", 0x00ff00)], components: [] });
+        // Action(s) sent their own output via sendFn (paginated lists, showData,
+        // etc.) - clear the now-meaningless "Processing…" placeholder.
+        await interaction.deleteReply().catch(() => {});
       }
     } catch (err) {
       log.error("Error executing confirmed command:", err.message);

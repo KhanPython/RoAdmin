@@ -1,5 +1,6 @@
-const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("../openCloudAPI");
+const robloxUserInfo = require("../robloxUserInfo");
 const { pushHistory } = require("../utils/commandHistory");
 const { buildRemoveFromBoardEmbed, buildInternalErrorEmbed, buildResultEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
@@ -61,22 +62,28 @@ module.exports = {
     try {
       // Attempt deletion directly - the Roblox API returns 404 if the key doesn't exist,
       // so there's no need to paginate the full leaderboard just to confirm existence first.
-      const response = await openCloud.RemoveOrderedDataStoreData(interaction.guildId, userId, leaderboardName, key, "global", universeId);
+      const [response, userInfo] = await Promise.all([
+        openCloud.RemoveOrderedDataStoreData(interaction.guildId, userId, leaderboardName, key, "global", universeId),
+        robloxUserInfo.getUserDisplayInfo(userId).catch(() => null),
+      ]);
 
       if (!response.success && response.status && response.status.toLowerCase().includes("not found")) {
         const keyToCheck = key || `${userId}`;
+        const userLabel = userInfo
+          ? `${userInfo.displayName || userInfo.username} (\`${userId}\`)`
+          : `\`${userId}\``;
         const notFoundEmbed = buildResultEmbed(
           "Remove Leaderboard Entry",
           { success: false, status: `Key \`${keyToCheck}\` not found` },
           [
-            { name: "User ID:", value: `\`${userId}\``, inline: true },
-            { name: "Universe ID:", value: `\`${universeId}\``, inline: true },
-            { name: "Leaderboard Name:", value: leaderboardName, inline: true },
-            { name: "Key searched:", value: keyToCheck, inline: true },
+            { name: "User", value: userLabel, inline: true },
+            { name: "Universe ID", value: `\`${universeId}\``, inline: true },
+            { name: "Leaderboard", value: leaderboardName, inline: true },
+            { name: "Key searched", value: keyToCheck, inline: true },
           ],
           undefined,
-          universeInfo.icon ?? null,
-          universeInfo.name ? `**Experience:** ${universeInfo.name}\n\n⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.` : `⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.`,
+          userInfo?.avatarUrl || universeInfo?.icon || null,
+          universeInfo?.name ? `**Experience:** ${universeInfo.name}\n\n⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.` : `⚠️ Key \`${keyToCheck}\` was not found in leaderboard **${leaderboardName}**.`,
         ).setColor(0xFFFF00);
 
         await interaction.editReply({ embeds: [notFoundEmbed] });
@@ -87,7 +94,7 @@ module.exports = {
         pushHistory(interaction.channelId, interaction.user.id, "removeFromBoard", { userId, leaderboardName, key, universeId });
       }
 
-      await interaction.editReply({ embeds: [buildRemoveFromBoardEmbed(response, { userId, universeId, leaderboardName, key }, universeInfo)] });
+      await interaction.editReply({ embeds: [buildRemoveFromBoardEmbed(response, { userId, universeId, leaderboardName, key }, universeInfo, userInfo)] });
     } catch (error) {
       log.error("Error in removeFromBoard command:", error.message);
       await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });

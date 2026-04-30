@@ -14,6 +14,7 @@ const {
   buildInternalErrorEmbed,
 } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
+const { promptInlineConfirm } = require("../utils/inlineConfirm");
 const log = require("../utils/logger");
 
 module.exports = {
@@ -106,10 +107,23 @@ module.exports = {
           await btn.reply({ content: "Invalid selection.", flags: MessageFlags.Ephemeral }).catch(() => {});
           return;
         }
-        await btn.deferUpdate().catch(() => {});
+
+        const cachedInfo = userInfoMap.get(String(targetId));
+        const userLabel = cachedInfo
+          ? `**${cachedInfo.displayName || cachedInfo.username}** (\`${targetId}\`)`
+          : `\`${targetId}\``;
+
+        const confirmed = await promptInlineConfirm({
+          interaction: btn,
+          title: "Confirm Unban",
+          description: `**Experience:** ${universeInfo.name}\n\nUnban ${userLabel} from this universe?`,
+          iconUrl: cachedInfo?.avatarUrl || universeInfo.icon || null,
+        });
+        if (!confirmed) return;
+
         const [response, info] = await Promise.all([
           openCloud.UnbanUser(interaction.guildId, targetId, universeId),
-          robloxUserInfo.getUserDisplayInfo(targetId).catch(() => null),
+          cachedInfo ? Promise.resolve(cachedInfo) : robloxUserInfo.getUserDisplayInfo(targetId).catch(() => null),
         ]);
         if (response.success) {
           pushHistory(interaction.channelId, interaction.user.id, "unban", { userId: targetId, universeId });

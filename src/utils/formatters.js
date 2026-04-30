@@ -416,23 +416,23 @@ function formatLeaderboardEntries(data, pageNum, { universeId, scope, universeNa
     .join("\n");
   const headerParts = [];
   if (universeName) headerParts.push(`**Experience:** ${universeName}`);
-  headerParts.push(`Universe: \`${universeId}\` | Scope: \`${scope}\``);
+  headerParts.push(`**Universe:** \`${universeId}\` · **Scope:** \`${scope}\``);
   if (entries.length) headerParts.push(`**Showing:** ${offset + 1}-${offset + entries.length}`);
-  return `${headerParts.join(" | ")}\n\n${lines || "No entries found."}`;
+  return `${headerParts.join("\n")}\n\n${lines || "No entries found."}`;
 }
 
-function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName, key }, universeInfo) {
+function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName, key }, universeInfo, userInfo) {
   return buildResultEmbed(
-    "Remove Leaderboard Entry",
+    _userTitle("Remove Leaderboard Entry", userId, userInfo),
     result,
     [
-      { name: "User ID", value: `\`${userId}\``, inline: true },
+      _userField(userId, userInfo),
       { name: "Universe ID", value: `\`${universeId}\``, inline: true },
       { name: "Leaderboard", value: leaderboardName, inline: true },
       { name: "Key", value: key || `\`${userId}\``, inline: true },
     ],
     result.success ? `Entry successfully removed for user \`${userId}\`` : result.status,
-    universeInfo?.icon ?? null,
+    _pickThumb(userInfo, universeInfo),
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );
 }
