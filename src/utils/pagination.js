@@ -8,6 +8,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
 } = require("discord.js");
+const log = require("./logger");
 
 async function sendPaginatedList({
   authorId,
@@ -88,9 +89,16 @@ async function sendPaginatedList({
     else if (i.customId === "pg_prev") currentPage = Math.max(0, currentPage - 1);
     else currentPage++; // pg_next
 
-    await i.deferUpdate();
-    const { embed, components } = await buildPage();
-    await doEdit({ embeds: [embed], components }).catch(() => {});
+    try {
+      await i.deferUpdate();
+      const { embed, components } = await buildPage();
+      // Use the button interaction's editReply so the ack and edit share the
+      // same token. Editing via the original slash interaction's token after
+      // a component deferUpdate can silently fail on ephemeral messages.
+      await i.editReply({ embeds: [embed], components });
+    } catch (err) {
+      log.warn("Pagination collect handler error:", err.message);
+    }
   });
 
   collector.on("end", () => {
