@@ -4,6 +4,24 @@
 
 const { EmbedBuilder } = require("discord.js");
 const { formatDuration } = require("./timeFormat");
+const { formatUserLabel } = require("../robloxUserInfo");
+
+// --- Discord native timestamp helpers ----------------------------------------
+// https://discord.com/developers/docs/reference#message-formatting-timestamp-styles
+//   F = full date+time, R = relative (e.g. "in 3 days")
+function _toUnix(d) {
+  if (!d) return null;
+  const n = d instanceof Date ? d.getTime() : new Date(d).getTime();
+  return Number.isFinite(n) ? Math.floor(n / 1000) : null;
+}
+function discordTimestamp(d, style = "F") {
+  const u = _toUnix(d);
+  return u === null ? null : `<t:${u}:${style}>`;
+}
+function discordFullAndRelative(d) {
+  const u = _toUnix(d);
+  return u === null ? null : `<t:${u}:F> (<t:${u}:R>)`;
+}
 
 function buildResultEmbed(title, result, fields = [], footerText = "", iconUrl = null, description = null) {
   const embed = new EmbedBuilder()
@@ -31,8 +49,82 @@ function buildErrorEmbed(message) {
 }
 
 // Use this in command catch blocks - never pass error.message directly to Discord
-function buildInternalErrorEmbed() {
-  return buildErrorEmbed("An unexpected error occurred. Please try again.");
+function buildInternalErrorEmbed(message) {
+  return buildErrorEmbed(message || "An unexpected error occurred. Please try again.");
+}
+
+// Build an actionable error embed for known Open Cloud HTTP statuses.
+// `context` is one of: "ban", "unban", "datastore", "messaging", "general".
+function buildHttpErrorEmbed(status, context = "general", { universeId, retryAfterMs } = {}) {
+  const SCOPE_HINT = {
+    ban: "Your API key needs the **`user-restrictions:write`** scope and must be bound to this universe.",
+    unban: "Your API key needs the **`user-restrictions:write`** scope.",
+    checkBan: "Your API key needs the **`user-restrictions:read`** scope.",
+    datastore: "Your API key needs the **DataStore (read/write)** scope and must be bound to this universe.",
+    messaging: "Your API key needs the **`universe.messaging-service:publish`** scope.",
+    general: "Your API key may be missing required Open Cloud scopes for this universe.",
+  };
+  const remediation = SCOPE_HINT[context] || SCOPE_HINT.general;
+
+  let title = "Error";
+  let description;
+  switch (status) {
+    case 401:
+      title = "Invalid API Key";
+      description = `The Roblox API key was rejected (401 Unauthorized).\n\n**How to fix:**\n• Generate a fresh key at <https://create.roblox.com/dashboard/credentials>\n• ${remediation}\n• Re-run \`/setapikey\` with the new key`;
+      break;
+    case 403:
+      title = "Permission Denied";
+      description = `Roblox accepted the key but rejected the action (403 Forbidden).\n\n**How to fix:**\n• ${remediation}\n• Confirm the key's universe binding includes \`${universeId ?? "this universe"}\`\n• Re-issue the key with the missing scopes and run \`/setapikey\``;
+      break;
+    case 404:
+      title = "Not Found";
+      description = `Roblox returned 404 - the universe, user, or resource could not be found.\n\n**How to fix:**\n• Double-check the universe ID at <https://create.roblox.com/dashboard/creations>\n• Confirm the user ID, datastore name, and scope are correct`;
+      break;
+    case 429: {
+      title = "Rate Limited";
+      const retrySecs = retryAfterMs ? Math.ceil(retryAfterMs / 1000) : null;
+      description = retrySecs
+        ? `Roblox is rate limiting requests. **Try again in ${retrySecs}s.**`
+        : `Roblox is rate limiting requests. Wait a moment and try again.`;
+      break;
+    }
+    case 409:
+      title = "Conflict";
+      description = "This action conflicts with the current state (e.g. user already has an active ban).";
+      break;
+    case 500:
+    case 502:
+    case 503:
+      title = "Roblox Service Unavailable";
+      description = `Roblox returned ${status}. Their servers are having issues - try again in a minute.`;
+      break;
+    default:
+      description = status
+        ? `Request failed with HTTP ${status}.`
+        : "An unexpected error occurred. Please try again.";
+  }
+
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setColor(0xff0000)
+    .setDescription(description)
+    .setTimestamp();
+}
+
+// Try to extract an HTTP status code out of an Open Cloud result.status string
+// (status strings look like "Error: HTTP Error 401" or "Error: Invalid API key").
+function extractHttpStatus(result) {
+  if (!result || result.success) return null;
+  if (typeof result.httpStatus === "number") return result.httpStatus;
+  const s = String(result.status || "");
+  const m = s.match(/HTTP (?:Error )?(\d{3})/i);
+  if (m) return Number(m[1]);
+  if (/Invalid API key/i.test(s)) return 401;
+  if (/Access denied|permissions/i.test(s)) return 403;
+  if (/Not found|not_?found/i.test(s)) return 404;
+  if (/Rate limit/i.test(s)) return 429;
+  return null;
 }
 
 function buildProcessingEmbed(description = "Processing your request. This may take a moment.") {
@@ -43,81 +135,170 @@ function buildProcessingEmbed(description = "Processing your request. This may t
     .setTimestamp();
 }
 
-function buildBanEmbed(result, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo) {
+function _userTitle(verb, userId, userInfo) {
+  if (userInfo?.displayName || userInfo?.username) {
+    const name = userInfo.displayName || userInfo.username;
+    return `${verb}: ${name} (${userId})`;
+  }
+  return `${verb} User: ${userId}`;
+}
+
+function _userField(userId, userInfo) {
+  return { name: "User", value: formatUserLabel(userId, userInfo), inline: true };
+}
+
+// Prefer the user's avatar as the embed thumbnail when available; fall back to the
+// universe icon. User-centric embeds should foreground the user.
+function _pickThumb(userInfo, universeInfo) {
+  return userInfo?.avatarUrl || universeInfo?.icon || null;
+}
+
+function buildBanEmbed(result, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo, userInfo) {
+  if (!result.success) {
+    const status = extractHttpStatus(result);
+    if (status) return buildHttpErrorEmbed(status, "ban", { universeId });
+  }
+  const fields = [
+    _userField(userId, userInfo),
+    { name: "Universe ID", value: `\`${universeId}\``, inline: true },
+    { name: "Reason", value: reason || "-", inline: true },
+    { name: "Duration", value: duration || "permanent", inline: true },
+    { name: "Exclude Alts", value: excludeAltAccounts ? "✅ Yes" : "❌ No", inline: true },
+  ];
+  if (result.success && result.expiresDate) {
+    fields.push({ name: "Expires", value: discordFullAndRelative(result.expiresDate) || "Permanent", inline: false });
+  }
   return buildResultEmbed(
-    `Ban User: \`${userId}\``,
+    _userTitle("Ban", userId, userInfo),
     result,
-    [
-      { name: "User ID", value: `\`${userId}\``, inline: true },
-      { name: "Universe ID", value: `\`${universeId}\``, inline: true },
-      { name: "Reason", value: reason, inline: true },
-      { name: "Duration", value: duration || "permanent", inline: true },
-      { name: "Exclude Alts", value: excludeAltAccounts ? "✅ Yes" : "❌ No", inline: true },
-    ],
+    fields,
     result.success
       ? result.expiresDate
-        ? `Player has been banned until ${result.expiresDate.toLocaleString()}`
+        ? "Player has been banned"
         : "Player has been banned permanently"
       : result.status,
-    universeInfo?.icon ?? null,
+    _pickThumb(userInfo, universeInfo),
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );
 }
 
-function buildUnbanEmbed(result, { userId, universeId }, universeInfo) {
+function buildUnbanEmbed(result, { userId, universeId }, universeInfo, userInfo) {
+  if (!result.success) {
+    const status = extractHttpStatus(result);
+    if (status && status !== 404) return buildHttpErrorEmbed(status, "unban", { universeId });
+  }
   return buildResultEmbed(
-    `Unban User: \`${userId}\``,
+    _userTitle("Unban", userId, userInfo),
     result,
     [
-      { name: "User ID", value: `\`${userId}\``, inline: true },
+      _userField(userId, userInfo),
       { name: "Universe ID", value: `\`${universeId}\``, inline: true },
     ],
     result.success ? "Player has been unbanned" : result.status,
-    universeInfo?.icon ?? null,
+    _pickThumb(userInfo, universeInfo),
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   );
 }
 
-function buildCheckBanEmbed(result, { userId, universeId }, universeInfo) {
+function buildCheckBanEmbed(result, { userId, universeId }, universeInfo, userInfo) {
+  if (!result.success) {
+    const status = extractHttpStatus(result);
+    if (status) return buildHttpErrorEmbed(status, "checkBan", { universeId });
+  }
   const isActive = result.success && result.active;
   const fields = [
-    { name: "User ID", value: `\`${userId}\``, inline: true },
+    _userField(userId, userInfo),
     { name: "Universe ID", value: `\`${universeId}\``, inline: true },
     { name: "Status", value: isActive ? "🔴 Banned" : "🟢 Not Banned", inline: true },
   ];
   if (isActive) {
     if (result.reason) fields.push({ name: "Reason", value: result.reason, inline: false });
-    fields.push({ name: "Banned At", value: result.startTime ? result.startTime.toLocaleString() : "Unknown", inline: true });
-    fields.push({ name: "Expires", value: result.expiresDate ? result.expiresDate.toLocaleString() : "Permanent", inline: true });
+    fields.push({ name: "Banned At", value: discordFullAndRelative(result.startTime) || "Unknown", inline: true });
+    fields.push({ name: "Expires", value: discordFullAndRelative(result.expiresDate) || "Permanent", inline: true });
     fields.push({ name: "Alt Ban", value: result.excludeAltAccounts ? "✅ Yes" : "❌ No", inline: true });
   }
 
   return buildResultEmbed(
-    `Ban Status: User \`${userId}\``,
+    _userTitle("Ban Status", userId, userInfo),
     { success: true, status: isActive ? "User is currently banned" : "User is not banned" },
     fields,
     undefined,
-    universeInfo?.icon ?? null,
+    _pickThumb(userInfo, universeInfo),
     universeInfo?.name ? `**Experience:** ${universeInfo.name}` : null,
   ).setColor(isActive ? 0xff0000 : 0x00ff00);
 }
 
+// Normalize a /v2/.../user-restrictions ban row into a flat shape we can render
+// without re-parsing in the embed builder.
+function _normalizeBan(b) {
+  const uid = b.user?.replace("users/", "") ?? null;
+  const r = b.gameJoinRestriction ?? {};
+  const reason = r.displayReason || r.privateReason || "No reason";
+  let expiresDate = null;
+  if (r.duration && r.startTime) {
+    const ms = new Date(r.startTime).getTime() + parseInt(r.duration, 10) * 1000;
+    if (Number.isFinite(ms)) expiresDate = new Date(ms);
+  }
+  const startDate = r.startTime ? new Date(r.startTime) : null;
+  return {
+    userId: uid,
+    reason,
+    startDate,
+    expiresDate,
+    excludeAltAccounts: !!r.excludeAltAccounts,
+  };
+}
+
+// LEGACY: kept for backwards-compat with NLP listBans flow.
 function formatBanEntries(data, page, { universeName } = {}) {
   const bans = data.bans || [];
   if (!bans.length) return "No active bans.";
   const offset = (page - 1) * 10;
   const header = universeName ? `**Experience:** ${universeName}\n\n` : "";
   return header + bans.map((b, i) => {
-    const uid = b.user?.replace("users/", "") ?? "?";
-    const r = b.gameJoinRestriction ?? {};
-    const reason = r.displayReason || r.privateReason || "No reason";
-    let expires = "Permanent";
-    if (r.duration && r.startTime) {
-      const expDt = new Date(new Date(r.startTime).getTime() + parseInt(r.duration, 10) * 1000);
-      expires = expDt.toLocaleDateString();
-    }
-    return `**${offset + i + 1}.** \`${uid}\` - ${reason}\n> Expires: ${expires}`;
+    const n = _normalizeBan(b);
+    const expires = n.expiresDate ? discordTimestamp(n.expiresDate, "R") : "Permanent";
+    return `**${offset + i + 1}.** \`${n.userId ?? "?"}\` - ${n.reason}\n> Expires: ${expires}`;
   }).join("\n\n");
+}
+
+// Build a structured "Active Bans" embed with one field per banned user using
+// native Discord relative timestamps. `userInfoMap` (Map<userIdString,info>)
+// provides resolved usernames; missing entries fall back to userId only.
+function buildListBansEmbed(data, pageNum, { universeName, iconUrl } = {}, userInfoMap) {
+  const bans = (data.bans || []).map(_normalizeBan);
+  const embed = new EmbedBuilder()
+    .setTitle(`Active Bans${universeName ? ` - ${universeName}` : ""}`)
+    .setColor(bans.length ? 0xff4444 : 0x5865f2)
+    .setTimestamp();
+  if (iconUrl) embed.setThumbnail(iconUrl);
+
+  if (!bans.length) {
+    embed.setDescription("No active bans.");
+    return { embed, bans };
+  }
+
+  const offset = (pageNum - 1) * 10;
+  // Discord caps an embed at 25 fields - 10 bans/page leaves room for header.
+  bans.forEach((n, i) => {
+    const info = userInfoMap?.get(String(n.userId));
+    const header = info
+      ? `${i + offset + 1}. ${info.displayName || info.username}${info.username && info.username !== info.displayName ? ` (@${info.username})` : ""}`
+      : `${i + offset + 1}. User ${n.userId ?? "?"}`;
+    const expires = n.expiresDate
+      ? `Expires ${discordTimestamp(n.expiresDate, "R")}`
+      : "Permanent";
+    const banned = n.startDate ? `Banned ${discordTimestamp(n.startDate, "R")}` : "Banned (unknown date)";
+    const altLine = n.excludeAltAccounts ? " · alts" : "";
+    const reasonLine = String(n.reason).slice(0, 400);
+    embed.addFields({
+      name: header.slice(0, 256),
+      value: `\`${n.userId ?? "?"}\` · ${banned} · ${expires}${altLine}\n> ${reasonLine}`.slice(0, 1024),
+      inline: false,
+    });
+  });
+
+  return { embed, bans };
 }
 
 // Format JSON into a code-block string safe for embed fields (≤1024 chars)
@@ -254,6 +435,38 @@ function formatKeyEntries(data, _pageNum, { universeId, scope, universeName }) {
   return `${header}\n\n${keys.map(k => `\`${k}\``).join("\n")}`;
 }
 
+// Build a structured "Keys" embed showing visible range + hint about more pages.
+function buildListKeysEmbed(data, pageNum, { universeId, scope, universeName, datastoreName, iconUrl } = {}) {
+  const keys = data.keys || [];
+  const offset = (pageNum - 1) * 20;
+  const start = keys.length ? offset + 1 : 0;
+  const end = offset + keys.length;
+  const moreHint = data.nextPageToken ? " (more available - use Next ▶)" : "";
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Keys - ${datastoreName || "datastore"}`)
+    .setColor(0x5865f2)
+    .setTimestamp();
+  if (iconUrl) embed.setThumbnail(iconUrl);
+
+  const headerLines = [];
+  if (universeName) headerLines.push(`**Experience:** ${universeName}`);
+  headerLines.push(`**Universe:** \`${universeId}\` · **Scope:** \`${scope}\``);
+  headerLines.push(
+    keys.length
+      ? `**Showing:** ${start}-${end}${moreHint}`
+      : "**No keys found in this scope.**"
+  );
+
+  let body = headerLines.join("\n");
+  if (keys.length) {
+    body += "\n\n" + keys.map(k => `• \`${String(k).slice(0, 200)}\``).join("\n");
+  }
+  // Description cap is 4096 - keys at 200 chars * 20 + overhead is well under.
+  embed.setDescription(body.slice(0, 4000));
+  return embed;
+}
+
 // --- Generic embed builders used across NLP handler, commands, and confirmation flows ---
 
 // Simple status/info embed (replaces local buildEmbed dupes across files)
@@ -305,6 +518,8 @@ module.exports = {
   buildResultEmbed,
   buildErrorEmbed,
   buildInternalErrorEmbed,
+  buildHttpErrorEmbed,
+  extractHttpStatus,
   buildProcessingEmbed,
   buildStatusEmbed,
   buildConfirmEmbed,
@@ -312,6 +527,7 @@ module.exports = {
   buildBanEmbed,
   buildUnbanEmbed,
   buildCheckBanEmbed,
+  buildListBansEmbed,
   formatBanEntries,
   formatJsonValue,
   buildShowDataEmbed,
@@ -321,4 +537,7 @@ module.exports = {
   formatLeaderboardEntries,
   buildRemoveFromBoardEmbed,
   formatKeyEntries,
+  buildListKeysEmbed,
+  discordTimestamp,
+  discordFullAndRelative,
 };

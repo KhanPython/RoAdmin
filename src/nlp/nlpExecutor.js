@@ -87,7 +87,7 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
         if (result.success && result.data !== null && result.data !== undefined) {
           const jsonString = JSON.stringify(result.data, null, 2);
           const fileBuffer = Buffer.from(jsonString, "utf-8");
-          const attachment = new AttachmentBuilder(fileBuffer, { name: `${params.key}_data.txt` });
+          const attachment = new AttachmentBuilder(fileBuffer, { name: `${params.key}_data.json` });
           await sendFn({ embeds: [showEmbed], files: [attachment] });
         } else {
           showEmbed.addFields({ name: "Value", value: "No data found for this key.", inline: false });

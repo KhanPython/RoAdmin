@@ -1,5 +1,6 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
+const robloxUserInfo = require("./../robloxUserInfo");
 const { pushHistory } = require("../utils/commandHistory");
 const { buildBanEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
@@ -71,13 +72,16 @@ module.exports = {
 
     try {
 
-      const response = await openCloud.BanUser(interaction.guildId, userId, reason, duration, excludeAltAccounts, universeId, interaction.user.id);
+      const [response, userInfo] = await Promise.all([
+        openCloud.BanUser(interaction.guildId, userId, reason, duration, excludeAltAccounts, universeId, interaction.user.id),
+        robloxUserInfo.getUserDisplayInfo(userId).catch(() => null),
+      ]);
 
       if (response.success) {
         pushHistory(interaction.channelId, interaction.user.id, "ban", { userId, reason, duration, excludeAltAccounts, universeId });
       }
 
-      await interaction.editReply({ embeds: [buildBanEmbed(response, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo)] });
+      await interaction.editReply({ embeds: [buildBanEmbed(response, { userId, universeId, reason, duration, excludeAltAccounts }, universeInfo, userInfo)] });
     } catch (error) {
       log.error("Error in ban command:", error.message);
       await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });

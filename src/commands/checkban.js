@@ -1,5 +1,6 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
+const robloxUserInfo = require("./../robloxUserInfo");
 const { pushHistory } = require("../utils/commandHistory");
 const { buildCheckBanEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
@@ -46,11 +47,14 @@ module.exports = {
 
     try {
 
-      const result = await openCloud.CheckBanStatus(interaction.guildId, userId, universeId);
+      const [result, userInfo] = await Promise.all([
+        openCloud.CheckBanStatus(interaction.guildId, userId, universeId),
+        robloxUserInfo.getUserDisplayInfo(userId).catch(() => null),
+      ]);
 
       pushHistory(interaction.channelId, interaction.user.id, "checkBan", { userId, universeId });
 
-      await interaction.editReply({ embeds: [buildCheckBanEmbed(result, { userId, universeId }, universeInfo)] });
+      await interaction.editReply({ embeds: [buildCheckBanEmbed(result, { userId, universeId }, universeInfo, userInfo)] });
     } catch (error) {
       log.error("Error in checkban command:", error.message);
       await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });

@@ -73,10 +73,10 @@ module.exports = {
       // Build metadata embed from shared formatter
       const infoEmbed = buildShowDataEmbed(playerDataResult, { key, universeId, datastoreName }, universeInfo);
 
-      // Always attach full data as a .txt file
+      // Always attach full data as a .json file (correct mime + matches content)
       const jsonString = JSON.stringify(playerDataResult.data, null, 2);
       const fileBuffer = Buffer.from(jsonString, 'utf-8');
-      const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.txt` });
+      const attachment = new AttachmentBuilder(fileBuffer, { name: `${key}_data.json` });
 
       await interaction.editReply({ embeds: [infoEmbed], files: [attachment] });
       

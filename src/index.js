@@ -158,22 +158,52 @@ client.on("interactionCreate", async (interaction) => {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   try {
-    // Validate the API key against Roblox API before storing
-    try {
-      const axios = require("axios");
-      const testUrl = `https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/dummy/scopes/global/entries/test`;
-      await axios.get(testUrl, {
-        headers: { "x-api-key": apiKey },
-        validateStatus: (status) => status === 200 || status === 404,
-      });
-    } catch (apiKeyError) {
-      const status = apiKeyError.response?.status;
-      if (status === 401) throw new Error("API key is invalid or revoked. Check the key and try again.");
-      if (status === 403) throw new Error("API key is valid but lacks the required permissions for this universe. Enable DataStore read access in the Open Cloud settings.");
-      throw new Error("Could not validate the API key. Check the universe ID and try again.");
+    const axios = require("axios");
+
+    // Probe each scope independently. We expect either 200/404 (== authorized,
+    // resource may not exist) or 401/403. Any 401 means the key itself is bad.
+    // 403 on a specific endpoint just means that scope is missing.
+    const probe = async (url) => {
+      try {
+        const r = await axios.get(url, {
+          headers: { "x-api-key": apiKey },
+          validateStatus: () => true,
+          timeout: 8000,
+        });
+        return r.status;
+      } catch (err) {
+        return err.response?.status ?? 0; // 0 = network error
+      }
+    };
+
+    const [datastoreStatus, banStatus] = await Promise.all([
+      probe(`https://apis.roblox.com/cloud/v2/universes/${universeId}/data-stores/dummy/scopes/global/entries/test`),
+      probe(`https://apis.roblox.com/cloud/v2/universes/${universeId}/user-restrictions/1`),
+    ]);
+
+    // Any 401 anywhere = the key itself is invalid/revoked.
+    if (datastoreStatus === 401 || banStatus === 401) {
+      throw new Error("API key is invalid or revoked. Check the key and try again.");
+    }
+    if (datastoreStatus === 0 && banStatus === 0) {
+      throw new Error("Could not reach Roblox to validate the API key. Try again.");
     }
 
-    // Key validated - now persist it
+    // 200/404 = authorized (resource may not exist). 403 = scope missing.
+    const isAuthorized = (s) => s === 200 || s === 404;
+    const scopes = {
+      datastore: isAuthorized(datastoreStatus),
+      banManagement: isAuthorized(banStatus),
+    };
+
+    if (!scopes.datastore && !scopes.banManagement) {
+      throw new Error(
+        "API key is valid but has no Roblox Open Cloud scopes for this universe. " +
+        "Enable DataStore and/or User Restrictions permissions and bind the key to this universe."
+      );
+    }
+
+    // Key validated - persist
     const persisted = openCloud.setApiKey(interaction.guildId, universeId, apiKey);
 
     let universeInfo;
@@ -187,9 +217,16 @@ client.on("interactionCreate", async (interaction) => {
 
     const diskFailed = keystore.isEnabled() && !persisted;
 
+    // Render scope summary (✅ available · ❌ missing).
+    const scopeLines = [
+      `${scopes.datastore ? "✅" : "❌"} **DataStore** (read/write) — \`/showData\`, \`/setdata\`, \`/listkeys\`, \`/listleaderboard\``,
+      `${scopes.banManagement ? "✅" : "❌"} **User Restrictions** — \`/ban\`, \`/unban\`, \`/checkban\`, \`/listbans\``,
+    ];
+    const missingScopes = !scopes.datastore || !scopes.banManagement;
+
     const embed = new EmbedBuilder()
       .setTitle(diskFailed ? "⚠️ Credential Storage Error" : "API Key Configured")
-      .setColor(diskFailed ? 0xFF9900 : 0x00FF00)
+      .setColor(diskFailed ? 0xFF9900 : missingScopes ? 0xFFC107 : 0x00FF00)
       .setDescription(
         diskFailed
           ? `Credential for universe \`${universeId}\` is active but could not be written to secure storage. It will not persist across restarts.`
@@ -198,17 +235,28 @@ client.on("interactionCreate", async (interaction) => {
             : `Credential for universe \`${universeId}\` is active for this session only.`
       )
       .addFields(
-        { name: "Universe ID:", value: `\`${universeId.toString()}\`` },
-        { name: "Experience:", value: universeInfo.name || "Unknown" }
-      )
-      .setFooter({
-        text: diskFailed
-          ? "Contact the bot administrator to resolve the storage issue."
-          : keystore.isEnabled()
-            ? "Encrypted at rest · Persists across restarts"
-            : "Session-only · Will not persist across restarts",
-      })
-      .setTimestamp();
+        { name: "Universe ID", value: `\`${universeId.toString()}\``, inline: true },
+        { name: "Experience", value: universeInfo.name || "Unknown", inline: true },
+        { name: "Detected Scopes", value: scopeLines.join("\n"), inline: false },
+      );
+
+    if (missingScopes) {
+      embed.addFields({
+        name: "Missing scopes",
+        value:
+          "Some commands won't work until you re-issue this key with the missing scopes enabled and bound to this universe at " +
+          "<https://create.roblox.com/dashboard/credentials>.",
+        inline: false,
+      });
+    }
+
+    embed.setFooter({
+      text: diskFailed
+        ? "Contact the bot administrator to resolve the storage issue."
+        : keystore.isEnabled()
+          ? "Encrypted at rest · Persists across restarts"
+          : "Session-only · Will not persist across restarts",
+    }).setTimestamp();
 
     if (universeInfo.icon) {
       embed.setThumbnail(universeInfo.icon);
@@ -217,7 +265,9 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     log.error("setapikey modal error:", error.message);
-    await interaction.editReply({ content: "❌ Something went wrong while configuring the API key. Please try again." });
+    await interaction.editReply({
+      content: `❌ ${error.message || "Something went wrong while configuring the API key. Please try again."}`,
+    });
   }
 });
 

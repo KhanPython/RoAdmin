@@ -1,5 +1,6 @@
 const { ApplicationCommandOptionType } = require("discord.js");
 const openCloud = require("./../openCloudAPI");
+const robloxUserInfo = require("./../robloxUserInfo");
 const { pushHistory } = require("../utils/commandHistory");
 const { buildUnbanEmbed, buildInternalErrorEmbed } = require("../utils/formatters");
 const { validateCommand } = require("../utils/commandValidator");
@@ -46,13 +47,16 @@ module.exports = {
 
     try {
 
-      const response = await openCloud.UnbanUser(interaction.guildId, userId, universeId);
+      const [response, userInfo] = await Promise.all([
+        openCloud.UnbanUser(interaction.guildId, userId, universeId),
+        robloxUserInfo.getUserDisplayInfo(userId).catch(() => null),
+      ]);
 
       if (response.success) {
         pushHistory(interaction.channelId, interaction.user.id, "unban", { userId, universeId });
       }
 
-      await interaction.editReply({ embeds: [buildUnbanEmbed(response, { userId, universeId }, universeInfo)] });
+      await interaction.editReply({ embeds: [buildUnbanEmbed(response, { userId, universeId }, universeInfo, userInfo)] });
     } catch (error) {
       log.error("Error in unban command:", error.message);
       await interaction.editReply({ embeds: [buildInternalErrorEmbed()] });
