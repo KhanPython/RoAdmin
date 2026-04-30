@@ -1,7 +1,8 @@
 // NLP action executor - translates parsed NLP commands into Roblox Open Cloud API calls
 
-const { AttachmentBuilder } = require("discord.js");
+const { AttachmentBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require("discord.js");
 const openCloud = require("../openCloudAPI");
+const robloxUserInfo = require("../robloxUserInfo");
 const log = require("../utils/logger");
 const { patchDatastoreValue } = require("./llmProcessor");
 const { sendPaginatedList } = require("../utils/pagination");
@@ -9,6 +10,7 @@ const {
   buildBanEmbed,
   buildUnbanEmbed,
   buildCheckBanEmbed,
+  buildListBansEmbed,
   formatBanEntries,
   buildShowDataEmbed,
   buildSetDataEmbed,
@@ -16,6 +18,7 @@ const {
   formatLeaderboardEntries,
   buildRemoveFromBoardEmbed,
   formatKeyEntries,
+  buildListKeysEmbed,
   buildErrorEmbed,
   buildInternalErrorEmbed,
 } = require("../utils/formatters");
@@ -54,27 +57,35 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
     const iconUrl = universeInfo?.icon ?? null;
 
     switch (action) {
-      case "ban":
-        result = await openCloud.BanUser(
-          guildId,
-          params.userId,
-          params.reason,
-          params.duration || null,
-          params.excludeAlts || false,
-          params.universeId,
-          authorId
-        );
-        return buildBanEmbed(result, {
+      case "ban": {
+        const [banResult, userInfo] = await Promise.all([
+          openCloud.BanUser(
+            guildId,
+            params.userId,
+            params.reason,
+            params.duration || null,
+            params.excludeAlts || false,
+            params.universeId,
+            authorId
+          ),
+          robloxUserInfo.getUserDisplayInfo(params.userId).catch(() => null),
+        ]);
+        return buildBanEmbed(banResult, {
           userId: params.userId,
           universeId: params.universeId,
           reason: params.reason,
           duration: params.duration,
           excludeAltAccounts: params.excludeAlts || false,
-        }, universeInfo);
+        }, universeInfo, userInfo);
+      }
 
-      case "unban":
-        result = await openCloud.UnbanUser(guildId, params.userId, params.universeId);
-        return buildUnbanEmbed(result, { userId: params.userId, universeId: params.universeId }, universeInfo);
+      case "unban": {
+        const [unbanResult, userInfo] = await Promise.all([
+          openCloud.UnbanUser(guildId, params.userId, params.universeId),
+          robloxUserInfo.getUserDisplayInfo(params.userId).catch(() => null),
+        ]);
+        return buildUnbanEmbed(unbanResult, { userId: params.userId, universeId: params.universeId }, universeInfo, userInfo);
+      }
 
       case "showData": {
         result = await openCloud.GetDataStoreEntry(
@@ -108,36 +119,117 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
         return null;
       }
 
-      case "removeFromBoard":
-        result = await openCloud.RemoveOrderedDataStoreData(
-          guildId,
-          params.userId,
-          params.leaderboardName,
-          params.key || String(params.userId),
-          params.scope || "global",
-          params.universeId
-        );
-        return buildRemoveFromBoardEmbed(result, {
+      case "removeFromBoard": {
+        const [boardResult, userInfo] = await Promise.all([
+          openCloud.RemoveOrderedDataStoreData(
+            guildId,
+            params.userId,
+            params.leaderboardName,
+            params.key || String(params.userId),
+            params.scope || "global",
+            params.universeId
+          ),
+          robloxUserInfo.getUserDisplayInfo(params.userId).catch(() => null),
+        ]);
+        // buildRemoveFromBoardEmbed currently doesn't surface user info, but
+        // we still resolve it so future formatter changes pick it up automatically.
+        void userInfo;
+        return buildRemoveFromBoardEmbed(boardResult, {
           userId: params.userId,
           universeId: params.universeId,
           leaderboardName: params.leaderboardName,
           key: params.key,
         }, universeInfo);
+      }
 
-      case "checkBan":
-        result = await openCloud.CheckBanStatus(guildId, params.userId, params.universeId);
-        return buildCheckBanEmbed(result, { userId: params.userId, universeId: params.universeId }, universeInfo);
+      case "checkBan": {
+        const [checkResult, userInfo] = await Promise.all([
+          openCloud.CheckBanStatus(guildId, params.userId, params.universeId),
+          robloxUserInfo.getUserDisplayInfo(params.userId).catch(() => null),
+        ]);
+        return buildCheckBanEmbed(checkResult, { userId: params.userId, universeId: params.universeId }, universeInfo, userInfo);
+      }
 
-      case "listBans":
+      case "listBans": {
+        // Match the slash-command UX: structured fields, relative timestamps,
+        // resolved usernames, and an inline Unban select menu.
+        const userInfoMap = new Map();
+
+        const fetchAndResolve = async (pt) => {
+          const data = await openCloud.ListBans(guildId, params.universeId, pt);
+          if (data.success) {
+            const ids = (data.bans || [])
+              .map(b => b.user?.replace("users/", ""))
+              .filter(Boolean);
+            const resolved = await robloxUserInfo.getDisplayInfoMany(ids).catch(() => new Map());
+            for (const [id, info] of resolved) userInfoMap.set(id, info);
+          }
+          return data;
+        };
+
+        const buildEmbed = (data, pageNum) => {
+          const { embed } = buildListBansEmbed(data, pageNum, {
+            universeName: universeInfo?.name ?? `Universe ${params.universeId}`,
+            iconUrl,
+          }, userInfoMap);
+          return embed;
+        };
+
+        const buildExtraRows = (data) => {
+          const ids = (data.bans || [])
+            .map(b => b.user?.replace("users/", ""))
+            .filter(Boolean)
+            .slice(0, 25);
+          if (!ids.length) return [];
+          const opts = ids.map(id => {
+            const info = userInfoMap.get(String(id));
+            const label = info
+              ? `${info.displayName || info.username || id}`.slice(0, 100)
+              : `User ${id}`;
+            const description = info?.username && info.username !== info.displayName
+              ? `@${info.username} · ${id}`.slice(0, 100)
+              : String(id).slice(0, 100);
+            return { label, description, value: String(id) };
+          });
+          const select = new StringSelectMenuBuilder()
+            .setCustomId("lb_unban_select")
+            .setPlaceholder("Unban a user from this page…")
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(opts);
+          return [new ActionRowBuilder().addComponents(select)];
+        };
+
+        const onComponent = async ({ interaction: btn, refresh }) => {
+          if (btn.customId !== "lb_unban_select") return;
+          const targetId = Number(btn.values?.[0]);
+          if (!Number.isFinite(targetId)) {
+            await btn.reply({ content: "Invalid selection.", flags: MessageFlags.Ephemeral }).catch(() => {});
+            return;
+          }
+          await btn.deferUpdate().catch(() => {});
+          const [unbanResult, info] = await Promise.all([
+            openCloud.UnbanUser(guildId, targetId, params.universeId),
+            robloxUserInfo.getUserDisplayInfo(targetId).catch(() => null),
+          ]);
+          await sendFn({
+            embeds: [buildUnbanEmbed(unbanResult, { userId: targetId, universeId: params.universeId }, universeInfo, info)],
+          }).catch(() => {});
+          await refresh();
+        };
+
         await sendPaginatedList({
           authorId,
-          title: `Active Bans - Universe ${params.universeId}`,
+          title: `Active Bans - ${universeInfo?.name ?? `Universe ${params.universeId}`}`,
           iconUrl,
-          fetchPage: (pt) => openCloud.ListBans(guildId, params.universeId, pt),
-          formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo?.name ?? null }),
+          fetchPage: fetchAndResolve,
+          buildEmbed,
+          buildExtraRows,
+          onComponent,
           sendInitial: sendFn,
         });
         return null;
+      }
 
       case "setData": {
         let parsedValue = params.value;
@@ -227,16 +319,62 @@ async function executeAction(action, params, universeInfo, sendFn, authorId, gui
         }, universeInfo);
       }
 
-      case "listKeys":
+      case "listKeys": {
+        const onComponent = async ({ interaction: sel }) => {
+          if (sel.customId !== "lk_show_select") return;
+          const key = sel.values?.[0];
+          if (!key) return;
+          await sel.deferUpdate().catch(() => {});
+          const result = await openCloud.GetDataStoreEntry(guildId, key, params.universeId, params.datastoreName);
+          if (!result.success || result.data === null || result.data === undefined) {
+            await sendFn({ content: `No data found for key \`${key}\`: ${result.status || "not found"}` }).catch(() => {});
+            return;
+          }
+          const showEmbed = buildShowDataEmbed(result, {
+            key,
+            universeId: params.universeId,
+            datastoreName: params.datastoreName,
+          }, universeInfo);
+          const jsonString = JSON.stringify(result.data, null, 2);
+          const attachment = new AttachmentBuilder(Buffer.from(jsonString, "utf-8"), { name: `${key}_data.json` });
+          await sendFn({ embeds: [showEmbed], files: [attachment] }).catch(() => {});
+        };
+
+        const buildExtraRows = (data) => {
+          const keys = (data.keys || []).slice(0, 25);
+          if (!keys.length) return [];
+          const opts = keys.map(k => ({
+            label: String(k).slice(0, 100),
+            value: String(k).slice(0, 100),
+            description: "View this entry",
+          }));
+          const select = new StringSelectMenuBuilder()
+            .setCustomId("lk_show_select")
+            .setPlaceholder("View an entry's value…")
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(opts);
+          return [new ActionRowBuilder().addComponents(select)];
+        };
+
         await sendPaginatedList({
           authorId,
           title: `Keys - ${params.datastoreName}`,
           iconUrl,
           fetchPage: (pt) => openCloud.ListDataStoreKeys(guildId, params.universeId, params.datastoreName, params.scope || "global", pt),
-          formatEntries: (data, pageNum) => formatKeyEntries(data, pageNum, { universeId: params.universeId, scope: params.scope || "global", universeName: universeInfo?.name ?? null }),
+          buildEmbed: (data, pageNum) => buildListKeysEmbed(data, pageNum, {
+            universeId: params.universeId,
+            scope: params.scope || "global",
+            universeName: universeInfo?.name ?? null,
+            datastoreName: params.datastoreName,
+            iconUrl,
+          }),
+          buildExtraRows,
+          onComponent,
           sendInitial: sendFn,
         });
         return null;
+      }
 
       default:
         return buildErrorEmbed(`Action "${action}" is not recognised.`);

@@ -267,16 +267,25 @@ function formatBanEntries(data, page, { universeName } = {}) {
 // provides resolved usernames; missing entries fall back to userId only.
 function buildListBansEmbed(data, pageNum, { universeName, iconUrl } = {}, userInfoMap) {
   const bans = (data.bans || []).map(_normalizeBan);
+  // Keep title plain - Discord embed titles don't render markdown, so the
+  // experience link belongs in the description (matches buildBanEmbed et al.)
   const embed = new EmbedBuilder()
-    .setTitle(`Active Bans${universeName ? ` - ${universeName}` : ""}`)
+    .setTitle("Active Bans")
     .setColor(bans.length ? 0xff4444 : 0x5865f2)
     .setTimestamp();
   if (iconUrl) embed.setThumbnail(iconUrl);
 
+  const descLines = [];
+  if (universeName) descLines.push(`**Experience:** ${universeName}`);
   if (!bans.length) {
-    embed.setDescription("No active bans.");
-    return { embed, bans };
+    descLines.push("No active bans.");
+  } else {
+    const offset = (pageNum - 1) * 10;
+    descLines.push(`**Showing:** ${offset + 1}-${offset + bans.length}`);
   }
+  if (descLines.length) embed.setDescription(descLines.join("\n"));
+
+  if (!bans.length) return { embed, bans };
 
   const offset = (pageNum - 1) * 10;
   // Discord caps an embed at 25 fields - 10 bans/page leaves room for header.
@@ -401,13 +410,15 @@ function buildDeleteDataEmbed(result, { key, universeId, datastoreName, scope },
 
 function formatLeaderboardEntries(data, pageNum, { universeId, scope, universeName, entriesPerPage = 10 }) {
   const offset = (pageNum - 1) * entriesPerPage;
-  const lines = (data.entries || [])
+  const entries = data.entries || [];
+  const lines = entries
     .map((e, i) => `${offset + i + 1}. **${e.id}** - ${e.value}`)
     .join("\n");
-  const header = universeName
-    ? `**Experience:** ${universeName} | Universe: \`${universeId}\` | Scope: \`${scope}\``
-    : `Universe: \`${universeId}\` | Scope: \`${scope}\``;
-  return `${header}\n\n${lines || "No entries found."}`;
+  const headerParts = [];
+  if (universeName) headerParts.push(`**Experience:** ${universeName}`);
+  headerParts.push(`Universe: \`${universeId}\` | Scope: \`${scope}\``);
+  if (entries.length) headerParts.push(`**Showing:** ${offset + 1}-${offset + entries.length}`);
+  return `${headerParts.join(" | ")}\n\n${lines || "No entries found."}`;
 }
 
 function buildRemoveFromBoardEmbed(result, { userId, universeId, leaderboardName, key }, universeInfo) {
@@ -441,7 +452,6 @@ function buildListKeysEmbed(data, pageNum, { universeId, scope, universeName, da
   const offset = (pageNum - 1) * 20;
   const start = keys.length ? offset + 1 : 0;
   const end = offset + keys.length;
-  const moreHint = data.nextPageToken ? " (more available - use Next ▶)" : "";
 
   const embed = new EmbedBuilder()
     .setTitle(`Keys - ${datastoreName || "datastore"}`)
@@ -454,7 +464,7 @@ function buildListKeysEmbed(data, pageNum, { universeId, scope, universeName, da
   headerLines.push(`**Universe:** \`${universeId}\` · **Scope:** \`${scope}\``);
   headerLines.push(
     keys.length
-      ? `**Showing:** ${start}-${end}${moreHint}`
+      ? `**Showing:** ${start}-${end}`
       : "**No keys found in this scope.**"
   );
 
