@@ -52,12 +52,18 @@ async function promptInlineConfirm({ interaction, title, description, iconUrl = 
       time: timeoutMs,
     });
 
-    const confirmed = click.customId === confirmId;
+    if (click.customId === cancelId) {
+      // Drop the prompt entirely - no need to leave a "Cancelled" residue.
+      await click.deferUpdate().catch(() => {});
+      await interaction.deleteReply().catch(() => {});
+      return false;
+    }
+
     await click.update({
-      embeds: [embed.setDescription(`${description}\n\n${confirmed ? "✅ Confirmed" : "❌ Cancelled"}`)],
+      embeds: [embed.setDescription(`${description}\n\n✅ Confirmed`)],
       components: [],
     }).catch(() => {});
-    return confirmed;
+    return true;
   } catch (err) {
     log.debug("Inline confirm timed out or errored:", err.message);
     await interaction.editReply({
