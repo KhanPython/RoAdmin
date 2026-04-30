@@ -3,6 +3,7 @@
 "use strict";
 
 const { EmbedBuilder } = require("discord.js");
+const { formatDuration } = require("./timeFormat");
 
 function buildResultEmbed(title, result, fields = [], footerText = "", iconUrl = null, description = null) {
   const embed = new EmbedBuilder()
@@ -270,7 +271,7 @@ function buildConfirmEmbed(title, description, { iconUrl = null, expirySeconds =
     .setTitle(title)
     .setDescription(description)
     .setColor(0xffa500)
-    .setFooter({ text: `This request expires in ${expirySeconds} seconds` })
+    .setFooter({ text: `This request expires in ${formatDuration(expirySeconds * 1000)}` })
     .setTimestamp();
   if (iconUrl) embed.setThumbnail(iconUrl);
   return embed;

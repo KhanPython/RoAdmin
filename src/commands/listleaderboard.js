@@ -65,6 +65,7 @@ module.exports = {
         formatEntries: (data, pageNum) => formatLeaderboardEntries(data, pageNum, { universeId, scope: scopeId, universeName: universeInfo.name, entriesPerPage: ENTRIES_PER_PAGE }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
+        deleteFn: () => interaction.deleteReply(),
         timeoutMs: 5 * 60 * 1000,
       });
     } catch (error) {

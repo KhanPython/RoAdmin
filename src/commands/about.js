@@ -1,6 +1,7 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
 const apiCache = require("../utils/apiCache");
 const keystore = require("../utils/keystore");
+const { formatDuration } = require("../utils/timeFormat");
 
 const { version } = require("../../package.json");
 
@@ -48,13 +49,5 @@ module.exports = {
 
 function formatUptime(ms) {
   if (!ms) return "Unknown";
-  const s = Math.floor(ms / 1000);
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const parts = [];
-  if (d > 0) parts.push(`${d}d`);
-  if (h > 0) parts.push(`${h}h`);
-  parts.push(`${m}m`);
-  return parts.join(" ");
+  return formatDuration(ms);
 }

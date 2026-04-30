@@ -50,6 +50,7 @@ module.exports = {
         formatEntries: (data, pageNum) => formatBanEntries(data, pageNum, { universeName: universeInfo.name }),
         sendInitial: (opts) => interaction.editReply(opts),
         editFn: (opts) => interaction.editReply(opts),
+        deleteFn: () => interaction.deleteReply(),
         timeoutMs: 5 * 60 * 1000,
       });
     } catch (error) {

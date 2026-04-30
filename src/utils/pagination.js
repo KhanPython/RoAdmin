@@ -9,6 +9,7 @@ const {
   ButtonStyle,
 } = require("discord.js");
 const log = require("./logger");
+const { formatDuration } = require("./timeFormat");
 
 async function sendPaginatedList({
   authorId,
@@ -18,10 +19,13 @@ async function sendPaginatedList({
   formatEntries,
   sendInitial,
   editFn = null,
+  deleteFn = null,
   timeoutMs = 120_000,
 }) {
   const pageTokens = [null]; // pageTokens[i] = cursor for page i; null = first page
   let currentPage = 0;
+
+  const expiryLabel = formatDuration(timeoutMs);
 
   const buildPage = async () => {
     const data = await fetchPage(pageTokens[currentPage]);
@@ -45,16 +49,19 @@ async function sendPaginatedList({
 
     const hasNext = currentPage + 1 < pageTokens.length;
     const hasPrev = currentPage > 0;
+    const isMultiPage = hasPrev || hasNext;
+
+    const footerText = isMultiPage
+      ? `Page ${currentPage + 1} · Expires in ${expiryLabel}`
+      : `Page ${currentPage + 1}`;
 
     const embed = new EmbedBuilder()
       .setTitle(title)
       .setColor(0x5865f2)
       .setDescription(formatEntries(data, currentPage + 1) || "No entries found.")
-      .setFooter({ text: `Page ${currentPage + 1}` })
+      .setFooter({ text: footerText })
       .setTimestamp();
     if (iconUrl) embed.setThumbnail(iconUrl);
-
-    const isMultiPage = hasPrev || hasNext;
 
     const buttons = isMultiPage
       ? [
@@ -79,6 +86,8 @@ async function sendPaginatedList({
 
   const doEdit = editFn ?? ((opts) => msg.edit(opts));
 
+  let latestInteraction = null;
+
   const collector = msg.createMessageComponentCollector({
     filter: (i) => i.user.id === authorId,
     time: timeoutMs,
@@ -91,18 +100,27 @@ async function sendPaginatedList({
 
     try {
       await i.deferUpdate();
+      latestInteraction = i;
       const { embed, components } = await buildPage();
-      // Use the button interaction's editReply so the ack and edit share the
-      // same token. Editing via the original slash interaction's token after
-      // a component deferUpdate can silently fail on ephemeral messages.
       await i.editReply({ embeds: [embed], components });
     } catch (err) {
       log.warn("Pagination collect handler error:", err.message);
     }
   });
 
-  collector.on("end", () => {
-    doEdit({ components: [] }).catch(() => {});
+  collector.on("end", async () => {
+    try {
+      if (latestInteraction) {
+        // Most recent button interaction owns the (often ephemeral) message token.
+        await latestInteraction.deleteReply();
+      } else if (deleteFn) {
+        await deleteFn();
+      } else {
+        await msg.delete();
+      }
+    } catch (err) {
+      log.debug("Pagination cleanup delete failed:", err.message);
+    }
   });
 }
 
